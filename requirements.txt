@@ -1,0 +1,8 @@
+# Streamlit framework
+streamlit>=1.30.0
+
+# Google Generative AI SDK (official Gemini SDK)
+google-generativeai>=0.3.0
+
+# Additional utilities
+python-dotenv>=1.0.0
