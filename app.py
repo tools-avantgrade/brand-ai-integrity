@@ -66,7 +66,7 @@ def configure_gemini() -> Tuple[Optional[genai.GenerativeModel], Optional[genai.
         genai.configure(api_key=api_key)
 
         # Leggi i nomi dei modelli dai secrets con fallback
-        gemini_model_name = st.secrets.get("GEMINI_MODEL", "gemini-1.5-flash")
+        gemini_model_name = st.secrets.get("GEMINI_MODEL", "gemini-3-flash-preview")
         evaluator_model_name = st.secrets.get("EVALUATOR_MODEL", gemini_model_name)
 
         # Configura i modelli con generation_config per stabilità
@@ -379,16 +379,15 @@ def render_section_c():
     all_valid = True
 
     for idx in sorted(st.session_state.ai_answers.keys()):
-        question = questions[idx]
+        question = questions[idx].replace('{BRAND_NAME}', brand_name)
 
-        st.markdown(f"**Domanda {idx + 1}:** {question.replace('{BRAND_NAME}', brand_name)}")
-
-        # Text area per risposta utente
+        # Text area per risposta utente con la domanda come label
         user_answer = st.text_area(
-            f"Risposta ground truth {idx + 1}",
+            question,
             value=st.session_state.user_answers.get(idx, ""),
             key=f"user_answer_{idx}",
             height=120,
+            placeholder="Inserisci qui la risposta corretta del brand...",
             help="Inserisci la risposta corretta secondo il brand (min 20 caratteri)"
         )
 
@@ -604,9 +603,9 @@ def main():
     with st.sidebar:
         st.header("Informazioni")
         st.markdown(f"""
-        **Modello AI:** {st.secrets.get('GEMINI_MODEL', 'gemini-1.5-flash')}
+        **Modello AI:** {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}
 
-        **Modello Evaluator:** {st.secrets.get('EVALUATOR_MODEL', 'gemini-1.5-flash')}
+        **Modello Evaluator:** {st.secrets.get('EVALUATOR_MODEL', 'gemini-3-flash-preview')}
 
         **Soglia match:** {MATCH_THRESHOLD}
 
