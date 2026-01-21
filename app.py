@@ -1,12 +1,14 @@
 """
 Brand AI Integrity Tool - MVP
 
-Misura la Brand Integrity del brand confrontando risposte AI (Gemini)
+Misura la Brand Integrity del brand confrontando risposte AI (Gemini, ChatGPT, Claude)
 con risposte ground truth fornite dall'utente.
 """
 
 import streamlit as st
 import google.generativeai as genai
+from openai import OpenAI
+from anthropic import Anthropic
 import json
 import time
 from typing import Dict, List, Optional, Tuple
@@ -54,32 +56,53 @@ def get_all_questions():
 def check_secrets() -> Tuple[bool, Optional[str]]:
     """Verifica che i secrets necessari siano configurati."""
     try:
-        api_key = st.secrets["GEMINI_API_KEY"]
-        if not api_key or api_key == "YOUR_GEMINI_API_KEY_HERE":
+        # Verifica Gemini API Key
+        gemini_key = st.secrets["GEMINI_API_KEY"]
+        if not gemini_key or gemini_key == "YOUR_GEMINI_API_KEY_HERE":
             return False, "GEMINI_API_KEY non configurata correttamente in secrets.toml"
+
+        # Verifica OpenAI API Key
+        openai_key = st.secrets["OPENAI_API_KEY"]
+        if not openai_key or openai_key == "YOUR_OPENAI_API_KEY_HERE":
+            return False, "OPENAI_API_KEY non configurata correttamente in secrets.toml"
+
+        # Verifica Anthropic API Key
+        anthropic_key = st.secrets["ANTHROPIC_API_KEY"]
+        if not anthropic_key or anthropic_key == "YOUR_ANTHROPIC_API_KEY_HERE":
+            return False, "ANTHROPIC_API_KEY non configurata correttamente in secrets.toml"
+
         return True, None
-    except KeyError:
-        return False, "GEMINI_API_KEY mancante in secrets.toml"
+    except KeyError as e:
+        return False, f"Chiave API mancante in secrets.toml: {str(e)}"
     except Exception as e:
         return False, f"Errore nel leggere secrets: {str(e)}"
 
 
-def configure_gemini() -> Tuple[Optional[genai.GenerativeModel], Optional[genai.GenerativeModel], Optional[str]]:
-    """Configura i modelli Gemini per generazione e valutazione."""
+def configure_ai_models() -> Tuple[Optional[genai.GenerativeModel], Optional[OpenAI], Optional[Anthropic], Optional[genai.GenerativeModel], Optional[str]]:
+    """Configura tutti i modelli AI (Gemini, OpenAI, Claude) e l'evaluator."""
     try:
-        api_key = st.secrets["GEMINI_API_KEY"]
-        genai.configure(api_key=api_key)
+        # Configura Gemini
+        gemini_api_key = st.secrets["GEMINI_API_KEY"]
+        genai.configure(api_key=gemini_api_key)
 
-        # Leggi i nomi dei modelli dai secrets con fallback
         gemini_model_name = st.secrets.get("GEMINI_MODEL", "gemini-3-flash-preview")
         evaluator_model_name = st.secrets.get("EVALUATOR_MODEL", gemini_model_name)
 
-        # Configura i modelli con generation_config per stabilità
+        # Config per modello di generazione
         generation_config = {
             "temperature": 0.2,
             "top_p": 0.8,
             "top_k": 40,
             "max_output_tokens": 1024,
+        }
+
+        # Config per evaluator: più token e response JSON mode
+        evaluator_config = {
+            "temperature": 0.2,
+            "top_p": 0.8,
+            "top_k": 40,
+            "max_output_tokens": 2048,
+            "response_mime_type": "application/json",
         }
 
         gemini_model = genai.GenerativeModel(
@@ -89,12 +112,18 @@ def configure_gemini() -> Tuple[Optional[genai.GenerativeModel], Optional[genai.
 
         evaluator_model = genai.GenerativeModel(
             model_name=evaluator_model_name,
-            generation_config=generation_config
+            generation_config=evaluator_config
         )
 
-        return gemini_model, evaluator_model, None
+        # Configura OpenAI
+        openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+        # Configura Anthropic (Claude)
+        anthropic_client = Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+
+        return gemini_model, openai_client, anthropic_client, evaluator_model, None
     except Exception as e:
-        return None, None, f"Errore nella configurazione Gemini: {str(e)}"
+        return None, None, None, None, f"Errore nella configurazione AI: {str(e)}"
 
 
 def rate_limit_check():
@@ -119,16 +148,10 @@ def rate_limit_check():
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def generate_ai_answer(_model: genai.GenerativeModel, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Genera risposta AI per una domanda sul brand.
-    Usa caching per evitare chiamate duplicate.
-    """
+def generate_gemini_answer(_model: genai.GenerativeModel, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
+    """Genera risposta da Gemini."""
     try:
-        # Sostituisci placeholder brand name
         final_question = question.replace("{BRAND_NAME}", brand_name)
-
-        # Prompt con istruzioni per risposte prudenti
         prompt = f"""Rispondi alla seguente domanda in modo conciso e prudente.
 Non inventare dettagli specifici (numeri, date, paesi, certificazioni) se non sei sicuro.
 Se manca informazione, dichiaralo esplicitamente.
@@ -138,14 +161,70 @@ Domanda: {final_question}
 Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."""
 
         response = _model.generate_content(prompt)
-
         if response and response.text:
             return response.text.strip(), None
         else:
-            return None, "Risposta vuota dal modello"
-
+            return None, "Risposta vuota da Gemini"
     except Exception as e:
-        return None, f"Errore generazione risposta: {str(e)}"
+        return None, f"Errore Gemini: {str(e)}"
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def generate_openai_answer(_client: OpenAI, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
+    """Genera risposta da ChatGPT."""
+    try:
+        final_question = question.replace("{BRAND_NAME}", brand_name)
+        openai_model = st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")
+
+        response = _client.chat.completions.create(
+            model=openai_model,
+            messages=[
+                {"role": "system", "content": "Sei un assistente che risponde in modo conciso e prudente. Non inventare dettagli specifici se non sei sicuro."},
+                {"role": "user", "content": f"{final_question}\n\nRispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."}
+            ],
+            temperature=0.2,
+            max_tokens=1024
+        )
+
+        if response and response.choices and response.choices[0].message.content:
+            return response.choices[0].message.content.strip(), None
+        else:
+            return None, "Risposta vuota da ChatGPT"
+    except Exception as e:
+        return None, f"Errore ChatGPT: {str(e)}"
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def generate_claude_answer(_client: Anthropic, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
+    """Genera risposta da Claude."""
+    try:
+        final_question = question.replace("{BRAND_NAME}", brand_name)
+        claude_model = st.secrets.get("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+
+        response = _client.messages.create(
+            model=claude_model,
+            max_tokens=1024,
+            temperature=0.2,
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"""Rispondi alla seguente domanda in modo conciso e prudente.
+Non inventare dettagli specifici (numeri, date, paesi, certificazioni) se non sei sicuro.
+Se manca informazione, dichiaralo esplicitamente.
+
+Domanda: {final_question}
+
+Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."""
+                }
+            ]
+        )
+
+        if response and response.content and len(response.content) > 0:
+            return response.content[0].text.strip(), None
+        else:
+            return None, "Risposta vuota da Claude"
+    except Exception as e:
+        return None, f"Errore Claude: {str(e)}"
 
 
 def evaluate_answer(_model: genai.GenerativeModel, question: str, ai_answer: str, user_answer: str, retry: bool = False) -> Tuple[Optional[Dict], Optional[str]]:
@@ -155,6 +234,7 @@ def evaluate_answer(_model: genai.GenerativeModel, question: str, ai_answer: str
     """
     try:
         prompt = f"""Valuta la coerenza tra la risposta AI e la risposta ground truth (utente).
+Le risposte possono contenere elenchi puntati o testo su più righe.
 
 Domanda: {question}
 
@@ -168,21 +248,21 @@ Criteri di valutazione:
 - "corretta" (score >= 0.75) se semanticamente allineata alla ground truth e non contraddice
 - "sbagliata" (score < 0.75) se contraddice, oppure aggiunge affermazioni specifiche incompatibili, oppure manca elementi essenziali quando la ground truth li indica chiaramente
 
-{"ATTENZIONE: Rispondi SOLO con JSON valido, senza testo aggiuntivo prima o dopo." if retry else ""}
+{"IMPORTANTE: Genera SOLO JSON valido. Il campo 'reason' deve essere una SINGOLA frase breve (max 100 caratteri)." if retry else ""}
 
-Rispondi SOLO con un oggetto JSON nel seguente formato (niente altro testo):
+Restituisci un oggetto JSON con la seguente struttura:
 {{
   "score": 0.85,
   "is_correct": true,
-  "reason": "La risposta AI è semanticamente allineata...",
-  "key_conflicts": ["eventuale conflitto 1", "conflitto 2"]
+  "reason": "Breve spiegazione in una frase",
+  "key_conflicts": ["conflitto 1", "conflitto 2"]
 }}
 
-Dove:
-- score: float da 0.0 a 1.0 (allineamento semantico)
-- is_correct: true se score >= {MATCH_THRESHOLD}, altrimenti false
-- reason: spiegazione breve (1-2 frasi)
-- key_conflicts: array di stringhe (max 3, può essere vuoto)
+Schema JSON:
+- score: numero decimale da 0.0 a 1.0 (allineamento semantico)
+- is_correct: booleano true se score >= {MATCH_THRESHOLD}, altrimenti false
+- reason: stringa breve (max 100 caratteri, 1 frase senza a capo)
+- key_conflicts: array di stringhe (max 3 elementi, può essere vuoto [])
 """
 
         response = _model.generate_content(prompt)
@@ -199,6 +279,9 @@ Dove:
             response_text = "\n".join(lines[1:-1]) if len(lines) > 2 else response_text
             response_text = response_text.replace("```json", "").replace("```", "").strip()
 
+        # Rimuovi eventuali spazi bianchi o caratteri nascosti
+        response_text = response_text.strip()
+
         try:
             result = json.loads(response_text)
 
@@ -212,6 +295,10 @@ Dove:
             result["score"] = float(result["score"])
             result["is_correct"] = bool(result["is_correct"])
 
+            # Normalizza reason: rimuovi newline se presenti
+            if isinstance(result["reason"], str):
+                result["reason"] = result["reason"].replace("\n", " ").strip()
+
             # key_conflicts opzionale
             if "key_conflicts" not in result:
                 result["key_conflicts"] = []
@@ -222,15 +309,15 @@ Dove:
             # Retry una volta
             if not retry:
                 return evaluate_answer(_model, question, ai_answer, user_answer, retry=True)
-            return None, f"Errore parsing JSON: {str(e)}\nRisposta: {response_text[:200]}"
+            return None, f"Errore parsing JSON: {str(e)}\nRisposta: {response_text[:300]}"
 
     except Exception as e:
         return None, f"Errore valutazione: {str(e)}"
 
 
 def render_section_a():
-    """Sezione A: Setup - Brand name e domande."""
-    st.header("Sezione A: Setup")
+    """Sezione A: Setup - Brand name, domande e risposte."""
+    st.header("Sezione A: Setup e Risposte")
 
     # Brand name
     brand_name = st.text_input(
@@ -248,94 +335,33 @@ def render_section_a():
         st.session_state.eval_results = {}
         st.session_state.summary = None
 
-    # Domande predefinite (non modificabili)
-    st.subheader("Domande da porre")
-    st.markdown("**Domande predefinite** (non modificabili):")
-
-    for idx, q in enumerate(DEFAULT_QUESTIONS):
-        # Mostra preview con brand name sostituito
-        if brand_name:
-            preview = q.replace("{BRAND_NAME}", brand_name)
-        else:
-            preview = q
-
-        st.text_area(
-            f"Domanda {idx + 1}",
-            value=preview if brand_name else q,
-            key=f"default_question_{idx}",
-            height=80,
-            disabled=True,
-            help="Domanda predefinita (non modificabile)"
-        )
-
-    # Domande personalizzate (modificabili)
-    st.markdown("**Domande personalizzate** (opzionali):")
-
-    custom_questions = st.session_state.custom_questions
-
-    # Mostra domande personalizzate esistenti
-    for idx, q in enumerate(custom_questions):
-        col1, col2 = st.columns([5, 1])
-        with col1:
-            # Mostra preview con brand name sostituito
-            if brand_name:
-                preview = q.replace("{BRAND_NAME}", brand_name)
-            else:
-                preview = q
-
-            new_q = st.text_area(
-                f"Domanda personalizzata {idx + 1}",
-                value=q,
-                key=f"custom_question_{idx}",
-                height=80,
-                help=f"Preview: {preview}"
-            )
-            if new_q != q:
-                st.session_state.custom_questions[idx] = new_q
-
-        with col2:
-            st.write("")  # spacing
-            st.write("")  # spacing
-            if st.button("Rimuovi", key=f"remove_custom_{idx}"):
-                st.session_state.custom_questions.pop(idx)
-                st.rerun()
-
-    # Pulsante aggiungi domanda personalizzata
-    all_questions = get_all_questions()
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        if st.button("Aggiungi domanda", disabled=len(all_questions) >= MAX_QUESTIONS):
-            st.session_state.custom_questions.append(f"Nuova domanda su {{BRAND_NAME}}?")
-            st.rerun()
-
-    with col2:
-        st.caption(f"Domande totali: {len(all_questions)} ({len(DEFAULT_QUESTIONS)} predefinite + {len(custom_questions)} personalizzate, max {MAX_QUESTIONS})")
-
-    # Validazione
     if not brand_name:
         st.warning("Inserisci il nome del brand per procedere")
         return False
 
-    return True
-
-
-def render_section_b():
-    """Sezione B: Raccolta risposte utente (ground truth)."""
-    st.header("Sezione B: Risposte Ground Truth")
-
-    brand_name = st.session_state.brand_name
-    questions = get_all_questions()
-
-    st.write("Inserisci le risposte corrette del brand per ogni domanda:")
+    # Domande e risposte
+    st.subheader("Domande e Risposte")
+    st.markdown("**Domande predefinite** (non modificabili):")
 
     all_valid = True
 
-    for idx, q in enumerate(questions):
-        question = q.replace('{BRAND_NAME}', brand_name)
+    # Domande predefinite con risposte inline
+    for idx, q in enumerate(DEFAULT_QUESTIONS):
+        # Mostra domanda con brand name sostituito
+        question = q.replace("{BRAND_NAME}", brand_name)
 
-        # Text area per risposta utente con la domanda come label
+        st.text_area(
+            f"Domanda {idx + 1}",
+            value=question,
+            key=f"default_question_{idx}",
+            height=60,
+            disabled=True,
+            help="Domanda predefinita (non modificabile)"
+        )
+
+        # Risposta utente subito sotto
         user_answer = st.text_area(
-            question,
+            f"Risposta alla domanda {idx + 1}",
             value=st.session_state.user_answers.get(idx, ""),
             key=f"user_answer_{idx}",
             height=120,
@@ -347,17 +373,81 @@ def render_section_b():
 
         # Validazione lunghezza
         if len(user_answer.strip()) < MIN_ANSWER_LENGTH:
-            st.warning(f"Risposta troppo corta (min {MIN_ANSWER_LENGTH} caratteri)")
+            st.warning(f"⚠️ Risposta troppo corta (min {MIN_ANSWER_LENGTH} caratteri)")
             all_valid = False
 
         st.divider()
 
+    # Domande personalizzate (modificabili) con risposte inline
+    custom_questions = st.session_state.custom_questions
+
+    if custom_questions:
+        st.markdown("**Domande personalizzate:**")
+
+    for idx, q in enumerate(custom_questions):
+        question_idx = len(DEFAULT_QUESTIONS) + idx
+
+        col1, col2 = st.columns([5, 1])
+        with col1:
+            # Mostra preview con brand name sostituito
+            preview = q.replace("{BRAND_NAME}", brand_name)
+
+            new_q = st.text_area(
+                f"Domanda personalizzata {idx + 1}",
+                value=q,
+                key=f"custom_question_{idx}",
+                height=60,
+                help=f"Preview: {preview}"
+            )
+            if new_q != q:
+                st.session_state.custom_questions[idx] = new_q
+
+        with col2:
+            st.write("")  # spacing
+            st.write("")  # spacing
+            if st.button("Rimuovi", key=f"remove_custom_{idx}"):
+                st.session_state.custom_questions.pop(idx)
+                # Rimuovi anche la risposta corrispondente
+                if question_idx in st.session_state.user_answers:
+                    del st.session_state.user_answers[question_idx]
+                st.rerun()
+
+        # Risposta utente subito sotto
+        user_answer = st.text_area(
+            f"Risposta alla domanda personalizzata {idx + 1}",
+            value=st.session_state.user_answers.get(question_idx, ""),
+            key=f"user_answer_{question_idx}",
+            height=120,
+            placeholder="Inserisci qui la risposta corretta del brand...",
+            help="Inserisci la risposta corretta secondo il brand (min 20 caratteri)"
+        )
+
+        st.session_state.user_answers[question_idx] = user_answer
+
+        # Validazione lunghezza
+        if len(user_answer.strip()) < MIN_ANSWER_LENGTH:
+            st.warning(f"⚠️ Risposta troppo corta (min {MIN_ANSWER_LENGTH} caratteri)")
+            all_valid = False
+
+        st.divider()
+
+    # Pulsante aggiungi domanda personalizzata
+    all_questions = get_all_questions()
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("➕ Aggiungi domanda personalizzata", disabled=len(all_questions) >= MAX_QUESTIONS):
+            st.session_state.custom_questions.append(f"Nuova domanda su {{BRAND_NAME}}?")
+            st.rerun()
+
+    with col2:
+        st.caption(f"Domande totali: {len(all_questions)} ({len(DEFAULT_QUESTIONS)} predefinite + {len(custom_questions)} personalizzate, max {MAX_QUESTIONS})")
+
     return all_valid
 
 
-def render_section_c(gemini_model: genai.GenerativeModel):
-    """Sezione C: Generazione risposte AI."""
-    st.header("Sezione C: Risposte AI")
+def render_section_b(gemini_model: genai.GenerativeModel, openai_client: OpenAI, anthropic_client: Anthropic):
+    """Sezione B: Generazione risposte AI (Gemini, ChatGPT, Claude)."""
+    st.header("Sezione B: Risposte AI")
 
     # Verifica che le risposte utente siano state inserite
     questions = get_all_questions()
@@ -369,13 +459,13 @@ def render_section_c(gemini_model: genai.GenerativeModel):
     )
 
     if not all_user_answers_valid:
-        st.info("Completa prima le risposte ground truth nella Sezione B")
+        st.info("Completa prima le risposte ground truth nella Sezione A")
         return False
 
     brand_name = st.session_state.brand_name
 
     # Pulsante genera
-    if st.button("Genera risposte AI", type="primary", disabled=not brand_name):
+    if st.button("Genera risposte AI (Gemini + ChatGPT + Claude)", type="primary", disabled=not brand_name):
         # Rate limiting
         can_proceed, error_msg = rate_limit_check()
         if not can_proceed:
@@ -388,16 +478,44 @@ def render_section_c(gemini_model: genai.GenerativeModel):
         st.session_state.ai_answers = {}
         errors = []
 
+        total_steps = len(questions) * 3  # 3 AI per domanda
+        current_step = 0
+
         for idx, question in enumerate(questions):
-            status_text.text(f"Generando risposta {idx + 1}/{len(questions)}...")
-            progress_bar.progress((idx) / len(questions))
+            st.session_state.ai_answers[idx] = {}
 
-            answer, error = generate_ai_answer(gemini_model, brand_name, question)
+            # Genera risposta Gemini
+            status_text.text(f"Generando risposta Gemini per domanda {idx + 1}/{len(questions)}...")
+            progress_bar.progress(current_step / total_steps)
 
-            if error:
-                errors.append(f"Domanda {idx + 1}: {error}")
+            gemini_answer, gemini_error = generate_gemini_answer(gemini_model, brand_name, question)
+            if gemini_error:
+                errors.append(f"Domanda {idx + 1} (Gemini): {gemini_error}")
             else:
-                st.session_state.ai_answers[idx] = answer
+                st.session_state.ai_answers[idx]["gemini"] = gemini_answer
+            current_step += 1
+
+            # Genera risposta ChatGPT
+            status_text.text(f"Generando risposta ChatGPT per domanda {idx + 1}/{len(questions)}...")
+            progress_bar.progress(current_step / total_steps)
+
+            openai_answer, openai_error = generate_openai_answer(openai_client, brand_name, question)
+            if openai_error:
+                errors.append(f"Domanda {idx + 1} (ChatGPT): {openai_error}")
+            else:
+                st.session_state.ai_answers[idx]["openai"] = openai_answer
+            current_step += 1
+
+            # Genera risposta Claude
+            status_text.text(f"Generando risposta Claude per domanda {idx + 1}/{len(questions)}...")
+            progress_bar.progress(current_step / total_steps)
+
+            claude_answer, claude_error = generate_claude_answer(anthropic_client, brand_name, question)
+            if claude_error:
+                errors.append(f"Domanda {idx + 1} (Claude): {claude_error}")
+            else:
+                st.session_state.ai_answers[idx]["claude"] = claude_answer
+            current_step += 1
 
             # Rate limiting check
             can_proceed, error_msg = rate_limit_check()
@@ -413,7 +531,8 @@ def render_section_c(gemini_model: genai.GenerativeModel):
             for err in errors:
                 st.text(err)
         else:
-            st.success(f"Generate {len(st.session_state.ai_answers)} risposte AI")
+            total_responses = sum(len(answers) for answers in st.session_state.ai_answers.values())
+            st.success(f"Generate {total_responses} risposte AI ({len(questions)} domande × 3 AI)")
 
         time.sleep(1)
         status_text.empty()
@@ -427,23 +546,45 @@ def render_section_c(gemini_model: genai.GenerativeModel):
             if idx in st.session_state.ai_answers:
                 with st.expander(f"Domanda {idx + 1}: {question.replace('{BRAND_NAME}', brand_name)[:60]}..."):
                     st.markdown(f"**Domanda:** {question.replace('{BRAND_NAME}', brand_name)}")
-                    st.markdown(f"**Risposta AI:**")
-                    st.info(st.session_state.ai_answers[idx])
+
+                    # Mostra le 3 risposte in colonne
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+                        st.markdown("**🤖 Gemini**")
+                        if "gemini" in st.session_state.ai_answers[idx]:
+                            st.info(st.session_state.ai_answers[idx]["gemini"])
+                        else:
+                            st.warning("Non disponibile")
+
+                    with col2:
+                        st.markdown("**💬 ChatGPT**")
+                        if "openai" in st.session_state.ai_answers[idx]:
+                            st.info(st.session_state.ai_answers[idx]["openai"])
+                        else:
+                            st.warning("Non disponibile")
+
+                    with col3:
+                        st.markdown("**🧠 Claude**")
+                        if "claude" in st.session_state.ai_answers[idx]:
+                            st.info(st.session_state.ai_answers[idx]["claude"])
+                        else:
+                            st.warning("Non disponibile")
 
     return len(st.session_state.ai_answers) > 0
 
 
-def render_section_d(evaluator_model: genai.GenerativeModel):
-    """Sezione D: Calcolo Brand Integrity."""
-    st.header("Sezione D: Calcolo Brand Integrity")
+def render_section_c(evaluator_model: genai.GenerativeModel):
+    """Sezione C: Calcolo Brand Integrity."""
+    st.header("Sezione C: Calcolo Brand Integrity")
 
     # Verifica prerequisiti
     if not st.session_state.user_answers:
-        st.info("Inserisci le risposte ground truth nella Sezione B")
+        st.info("Inserisci le risposte ground truth nella Sezione A")
         return False
 
     if not st.session_state.ai_answers:
-        st.info("Genera prima le risposte AI nella Sezione C")
+        st.info("Genera prima le risposte AI nella Sezione B")
         return False
 
     questions = get_all_questions()
@@ -459,7 +600,7 @@ def render_section_d(evaluator_model: genai.GenerativeModel):
         return False
 
     # Pulsante calcola
-    if st.button("Calcola Brand Integrity", type="primary"):
+    if st.button("Calcola Brand Integrity (3 AI)", type="primary"):
         # Rate limiting
         can_proceed, error_msg = rate_limit_check()
         if not can_proceed:
@@ -473,27 +614,45 @@ def render_section_d(evaluator_model: genai.GenerativeModel):
         errors = []
 
         brand_name = st.session_state.brand_name
+        ai_models = ["gemini", "openai", "claude"]
+        total_evals = len(st.session_state.ai_answers) * len(ai_models)
+        current_eval = 0
 
         for idx in sorted(st.session_state.ai_answers.keys()):
             question = questions[idx].replace("{BRAND_NAME}", brand_name)
-            ai_answer = st.session_state.ai_answers[idx]
+            ai_answers = st.session_state.ai_answers[idx]
             user_answer = st.session_state.user_answers[idx]
 
-            status_text.text(f"Valutando risposta {idx + 1}/{len(st.session_state.ai_answers)}...")
-            progress_bar.progress(idx / len(st.session_state.ai_answers))
+            st.session_state.eval_results[idx] = {}
+            scores = []
 
-            result, error = evaluate_answer(evaluator_model, question, ai_answer, user_answer)
+            # Valuta ciascuna AI
+            for ai_name in ai_models:
+                if ai_name in ai_answers:
+                    status_text.text(f"Valutando {ai_name.capitalize()} per domanda {idx + 1}/{len(st.session_state.ai_answers)}...")
+                    progress_bar.progress(current_eval / total_evals)
 
-            if error:
-                errors.append(f"Domanda {idx + 1}: {error}")
-            else:
-                st.session_state.eval_results[idx] = result
+                    result, error = evaluate_answer(evaluator_model, question, ai_answers[ai_name], user_answer)
 
-            # Rate limiting check
-            can_proceed, error_msg = rate_limit_check()
-            if not can_proceed:
-                st.error(error_msg)
-                break
+                    if error:
+                        errors.append(f"Domanda {idx + 1} ({ai_name.capitalize()}): {error}")
+                    else:
+                        st.session_state.eval_results[idx][ai_name] = result
+                        scores.append(result['score'])
+
+                    current_eval += 1
+
+                    # Rate limiting check
+                    can_proceed, error_msg = rate_limit_check()
+                    if not can_proceed:
+                        st.error(error_msg)
+                        break
+
+            # Calcola media score per questa domanda
+            if scores:
+                avg_score = sum(scores) / len(scores)
+                st.session_state.eval_results[idx]['average_score'] = avg_score
+                st.session_state.eval_results[idx]['is_correct'] = avg_score >= MATCH_THRESHOLD
 
         progress_bar.progress(1.0)
         status_text.text("Valutazione completata!")
@@ -501,14 +660,27 @@ def render_section_d(evaluator_model: genai.GenerativeModel):
         # Calcola summary
         if st.session_state.eval_results:
             total = len(st.session_state.eval_results)
-            correct = sum(1 for r in st.session_state.eval_results.values() if r['is_correct'])
+            correct = sum(1 for r in st.session_state.eval_results.values() if r.get('is_correct', False))
             integrity_score = round((correct / total) * 100)
+
+            # Calcola score medi per ogni AI
+            ai_scores = {ai: [] for ai in ai_models}
+            for result in st.session_state.eval_results.values():
+                for ai_name in ai_models:
+                    if ai_name in result and 'score' in result[ai_name]:
+                        ai_scores[ai_name].append(result[ai_name]['score'])
+
+            ai_averages = {
+                ai: round(sum(scores) / len(scores) * 100) if scores else 0
+                for ai, scores in ai_scores.items()
+            }
 
             st.session_state.summary = {
                 'total': total,
                 'correct': correct,
                 'incorrect': total - correct,
-                'integrity_score': integrity_score
+                'integrity_score': integrity_score,
+                'ai_scores': ai_averages
             }
 
         if errors:
@@ -527,18 +699,18 @@ def render_section_d(evaluator_model: genai.GenerativeModel):
     return st.session_state.summary is not None
 
 
-def render_section_e():
-    """Sezione E: Visualizzazione risultati."""
-    st.header("Sezione E: Risultati")
+def render_section_d():
+    """Sezione D: Visualizzazione risultati."""
+    st.header("Sezione D: Risultati")
 
     if not st.session_state.summary:
-        st.info("Calcola prima il Brand Integrity Score nella Sezione D")
+        st.info("Calcola prima il Brand Integrity Score nella Sezione C")
         return
 
     summary = st.session_state.summary
 
-    # Score grande
-    st.markdown("### Brand Integrity Score")
+    # Score grande (media di tutte le AI)
+    st.markdown("### Brand Integrity Score (Media)")
 
     # Colore basato su score
     score = summary['integrity_score']
@@ -551,14 +723,32 @@ def render_section_e():
 
     st.markdown(f"<h1 style='text-align: center; color: {color};'>{score}/100</h1>", unsafe_allow_html=True)
 
-    # Statistiche
+    # Statistiche generali
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Totale domande", summary['total'])
     with col2:
-        st.metric("Corrette", summary['correct'])
+        st.metric("Corrette (avg)", summary['correct'])
     with col3:
-        st.metric("Sbagliate", summary['incorrect'])
+        st.metric("Sbagliate (avg)", summary['incorrect'])
+
+    # Score individuali per AI
+    st.markdown("### Score per AI")
+    col1, col2, col3 = st.columns(3)
+
+    ai_scores = summary.get('ai_scores', {})
+
+    with col1:
+        gemini_score = ai_scores.get('gemini', 0)
+        st.metric("🤖 Gemini", f"{gemini_score}/100")
+
+    with col2:
+        openai_score = ai_scores.get('openai', 0)
+        st.metric("💬 ChatGPT", f"{openai_score}/100")
+
+    with col3:
+        claude_score = ai_scores.get('claude', 0)
+        st.metric("🧠 Claude", f"{claude_score}/100")
 
     st.divider()
 
@@ -572,35 +762,76 @@ def render_section_e():
         result = st.session_state.eval_results[idx]
         question = questions[idx].replace("{BRAND_NAME}", brand_name)
 
-        # Colore status
-        if result['is_correct']:
+        # Colore status basato su media
+        if result.get('is_correct', False):
             status = "CORRETTA"
             status_color = "green"
         else:
             status = "SBAGLIATA"
             status_color = "red"
 
+        avg_score = result.get('average_score', 0)
+
         # Expander per ogni domanda
-        with st.expander(f"Domanda {idx + 1}: {question[:60]}... - {status}"):
+        with st.expander(f"Domanda {idx + 1}: {question[:60]}... - {status} (avg: {avg_score:.2f})"):
             st.markdown(f"**Domanda completa:** {question}")
             st.markdown(f"**Esito:** :{status_color}[{status}]")
-            st.markdown(f"**Score:** {result['score']:.2f} / 1.00")
-            st.markdown(f"**Motivazione:** {result['reason']}")
+            st.markdown(f"**Score Medio:** {avg_score:.2f} / 1.00")
 
-            if result.get('key_conflicts'):
-                st.markdown("**Conflitti chiave:**")
-                for conflict in result['key_conflicts']:
-                    st.markdown(f"- {conflict}")
+            # Dettagli per ogni AI
+            st.markdown("---")
+            st.markdown("**Valutazioni per AI:**")
+
+            for ai_name, ai_label, ai_icon in [
+                ("gemini", "Gemini", "🤖"),
+                ("openai", "ChatGPT", "💬"),
+                ("claude", "Claude", "🧠")
+            ]:
+                if ai_name in result:
+                    ai_result = result[ai_name]
+                    ai_status_color = "green" if ai_result.get('is_correct', False) else "red"
+
+                    st.markdown(f"**{ai_icon} {ai_label}**")
+                    st.markdown(f"- Esito: :{ai_status_color}[{'CORRETTA' if ai_result.get('is_correct') else 'SBAGLIATA'}]")
+                    st.markdown(f"- Score: {ai_result.get('score', 0):.2f} / 1.00")
+                    st.markdown(f"- Motivazione: {ai_result.get('reason', 'N/A')}")
+
+                    if ai_result.get('key_conflicts'):
+                        st.markdown(f"- Conflitti: {', '.join(ai_result['key_conflicts'])}")
+
+                    st.markdown("")
 
             # Mostra risposte confrontate
-            with st.expander("Vedi confronto risposte"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown("**Risposta AI:**")
-                    st.info(st.session_state.ai_answers[idx])
-                with col2:
-                    st.markdown("**Risposta Ground Truth:**")
-                    st.success(st.session_state.user_answers[idx])
+            st.markdown("---")
+            st.markdown("**Confronto risposte:**")
+
+            # Ground truth
+            st.markdown("**✅ Risposta Ground Truth (Utente):**")
+            st.success(st.session_state.user_answers[idx])
+
+            # Risposte AI
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.markdown("**🤖 Gemini:**")
+                if "gemini" in st.session_state.ai_answers[idx]:
+                    st.info(st.session_state.ai_answers[idx]["gemini"])
+                else:
+                    st.warning("Non disponibile")
+
+            with col2:
+                st.markdown("**💬 ChatGPT:**")
+                if "openai" in st.session_state.ai_answers[idx]:
+                    st.info(st.session_state.ai_answers[idx]["openai"])
+                else:
+                    st.warning("Non disponibile")
+
+            with col3:
+                st.markdown("**🧠 Claude:**")
+                if "claude" in st.session_state.ai_answers[idx]:
+                    st.info(st.session_state.ai_answers[idx]["claude"])
+                else:
+                    st.warning("Non disponibile")
 
 
 def main():
@@ -612,7 +843,7 @@ def main():
     )
 
     st.title("Brand AI Integrity Tool")
-    st.markdown("Misura la Brand Integrity confrontando risposte AI (Gemini) con risposte ground truth del brand.")
+    st.markdown("Misura la Brand Integrity confrontando risposte AI (Gemini, ChatGPT, Claude) con risposte ground truth del brand.")
 
     # Init session state
     init_session_state()
@@ -621,11 +852,11 @@ def main():
     secrets_ok, error_msg = check_secrets()
     if not secrets_ok:
         st.error(f"Errore configurazione: {error_msg}")
-        st.info("Configura il file .streamlit/secrets.toml seguendo l'esempio in .streamlit/secrets.toml.example")
+        st.info("Configura il file .streamlit/secrets.toml con le chiavi API di Gemini, OpenAI e Anthropic")
         st.stop()
 
-    # Configure Gemini
-    gemini_model, evaluator_model, error_msg = configure_gemini()
+    # Configure AI models
+    gemini_model, openai_client, anthropic_client, evaluator_model, error_msg = configure_ai_models()
     if error_msg:
         st.error(error_msg)
         st.stop()
@@ -634,9 +865,13 @@ def main():
     with st.sidebar:
         st.header("Informazioni")
         st.markdown(f"""
-        **Modello AI:** {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}
+        **🤖 Gemini:** {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}
 
-        **Modello Evaluator:** {st.secrets.get('EVALUATOR_MODEL', 'gemini-3-flash-preview')}
+        **💬 ChatGPT:** {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}
+
+        **🧠 Claude:** {st.secrets.get('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022')}
+
+        **Evaluator:** {st.secrets.get('EVALUATOR_MODEL', 'gemini-3-flash-preview')}
 
         **Soglia match:** {MATCH_THRESHOLD}
 
@@ -651,40 +886,31 @@ def main():
     # Sezioni dell'app
     st.divider()
 
-    # Sezione A: Setup
-    setup_ok = render_section_a()
+    # Sezione A: Setup + Risposte (unificata)
+    user_answers_ready = render_section_a()
 
     st.divider()
 
-    # Sezione B: Risposte utente (ground truth)
-    if setup_ok:
-        user_answers_ready = render_section_b()
-    else:
-        st.info("Completa la Sezione A per procedere")
-        user_answers_ready = False
-
-    st.divider()
-
-    # Sezione C: Generazione risposte AI
+    # Sezione B: Generazione risposte AI (3 AI)
     if user_answers_ready:
-        ai_answers_ready = render_section_c(gemini_model)
+        ai_answers_ready = render_section_b(gemini_model, openai_client, anthropic_client)
     else:
-        st.info("Completa le risposte ground truth per procedere")
+        st.info("Completa le risposte nella Sezione A per procedere")
         ai_answers_ready = False
 
     st.divider()
 
-    # Sezione D: Calcolo
+    # Sezione C: Calcolo Brand Integrity (3 AI)
     if ai_answers_ready:
-        calculation_done = render_section_d(evaluator_model)
+        calculation_done = render_section_c(evaluator_model)
     else:
         st.info("Completa le sezioni precedenti per calcolare il Brand Integrity Score")
         calculation_done = False
 
     st.divider()
 
-    # Sezione E: Risultati
-    render_section_e()
+    # Sezione D: Risultati (3 AI)
+    render_section_d()
 
     # Footer
     st.divider()
