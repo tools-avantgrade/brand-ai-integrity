@@ -199,7 +199,7 @@ def generate_claude_answer(_client: Anthropic, brand_name: str, question: str) -
     """Genera risposta da Claude."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
-        claude_model = st.secrets.get("CLAUDE_MODEL", "claude-3-5-sonnet-20240620")
+        claude_model = st.secrets.get("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
 
         response = _client.messages.create(
             model=claude_model,
@@ -869,7 +869,7 @@ def main():
 
         **💬 ChatGPT:** {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}
 
-        **🧠 Claude:** {st.secrets.get('CLAUDE_MODEL', 'claude-3-5-sonnet-20240620')}
+        **🧠 Claude:** {st.secrets.get('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022')}
 
         **Evaluator:** {st.secrets.get('EVALUATOR_MODEL', 'gemini-3-flash-preview')}
 
