@@ -30,8 +30,8 @@ def init_session_state():
     """Inizializza lo stato della sessione Streamlit."""
     if 'brand_name' not in st.session_state:
         st.session_state.brand_name = ""
-    if 'questions' not in st.session_state:
-        st.session_state.questions = DEFAULT_QUESTIONS.copy()
+    if 'custom_questions' not in st.session_state:
+        st.session_state.custom_questions = []
     if 'ai_answers' not in st.session_state:
         st.session_state.ai_answers = {}
     if 'user_answers' not in st.session_state:
@@ -44,6 +44,11 @@ def init_session_state():
         st.session_state.api_calls_count = 0
     if 'last_api_call_time' not in st.session_state:
         st.session_state.last_api_call_time = 0
+
+
+def get_all_questions():
+    """Restituisce tutte le domande (predefinite + personalizzate)."""
+    return DEFAULT_QUESTIONS + st.session_state.custom_questions
 
 
 def check_secrets() -> Tuple[bool, Optional[str]]:
@@ -243,13 +248,33 @@ def render_section_a():
         st.session_state.eval_results = {}
         st.session_state.summary = None
 
-    # Editor domande
+    # Domande predefinite (non modificabili)
     st.subheader("Domande da porre")
+    st.markdown("**Domande predefinite** (non modificabili):")
 
-    questions = st.session_state.questions
+    for idx, q in enumerate(DEFAULT_QUESTIONS):
+        # Mostra preview con brand name sostituito
+        if brand_name:
+            preview = q.replace("{BRAND_NAME}", brand_name)
+        else:
+            preview = q
 
-    # Mostra domande esistenti
-    for idx, q in enumerate(questions):
+        st.text_area(
+            f"Domanda {idx + 1}",
+            value=preview if brand_name else q,
+            key=f"default_question_{idx}",
+            height=80,
+            disabled=True,
+            help="Domanda predefinita (non modificabile)"
+        )
+
+    # Domande personalizzate (modificabili)
+    st.markdown("**Domande personalizzate** (opzionali):")
+
+    custom_questions = st.session_state.custom_questions
+
+    # Mostra domande personalizzate esistenti
+    for idx, q in enumerate(custom_questions):
         col1, col2 = st.columns([5, 1])
         with col1:
             # Mostra preview con brand name sostituito
@@ -259,50 +284,95 @@ def render_section_a():
                 preview = q
 
             new_q = st.text_area(
-                f"Domanda {idx + 1}",
+                f"Domanda personalizzata {idx + 1}",
                 value=q,
-                key=f"question_{idx}",
+                key=f"custom_question_{idx}",
                 height=80,
                 help=f"Preview: {preview}"
             )
             if new_q != q:
-                st.session_state.questions[idx] = new_q
+                st.session_state.custom_questions[idx] = new_q
 
         with col2:
             st.write("")  # spacing
             st.write("")  # spacing
-            if st.button("Rimuovi", key=f"remove_{idx}", disabled=len(questions) <= MIN_QUESTIONS):
-                st.session_state.questions.pop(idx)
+            if st.button("Rimuovi", key=f"remove_custom_{idx}"):
+                st.session_state.custom_questions.pop(idx)
                 st.rerun()
 
-    # Pulsante aggiungi domanda
+    # Pulsante aggiungi domanda personalizzata
+    all_questions = get_all_questions()
     col1, col2 = st.columns([1, 3])
     with col1:
-        if st.button("Aggiungi domanda", disabled=len(questions) >= MAX_QUESTIONS):
-            st.session_state.questions.append(f"Nuova domanda su {{BRAND_NAME}}?")
+        if st.button("Aggiungi domanda", disabled=len(all_questions) >= MAX_QUESTIONS):
+            st.session_state.custom_questions.append(f"Nuova domanda su {{BRAND_NAME}}?")
             st.rerun()
 
     with col2:
-        st.caption(f"Domande: {len(questions)} (min {MIN_QUESTIONS}, max {MAX_QUESTIONS})")
+        st.caption(f"Domande totali: {len(all_questions)} ({len(DEFAULT_QUESTIONS)} predefinite + {len(custom_questions)} personalizzate, max {MAX_QUESTIONS})")
 
     # Validazione
     if not brand_name:
         st.warning("Inserisci il nome del brand per procedere")
         return False
 
-    if len([q for q in questions if q.strip()]) < MIN_QUESTIONS:
-        st.warning(f"Inserisci almeno {MIN_QUESTIONS} domande")
-        return False
-
     return True
 
 
-def render_section_b(gemini_model: genai.GenerativeModel):
-    """Sezione B: Generazione risposte AI."""
-    st.header("Sezione B: Risposte AI")
+def render_section_b():
+    """Sezione B: Raccolta risposte utente (ground truth)."""
+    st.header("Sezione B: Risposte Ground Truth")
 
     brand_name = st.session_state.brand_name
-    questions = st.session_state.questions
+    questions = get_all_questions()
+
+    st.write("Inserisci le risposte corrette del brand per ogni domanda:")
+
+    all_valid = True
+
+    for idx, q in enumerate(questions):
+        question = q.replace('{BRAND_NAME}', brand_name)
+
+        # Text area per risposta utente con la domanda come label
+        user_answer = st.text_area(
+            question,
+            value=st.session_state.user_answers.get(idx, ""),
+            key=f"user_answer_{idx}",
+            height=120,
+            placeholder="Inserisci qui la risposta corretta del brand...",
+            help="Inserisci la risposta corretta secondo il brand (min 20 caratteri)"
+        )
+
+        st.session_state.user_answers[idx] = user_answer
+
+        # Validazione lunghezza
+        if len(user_answer.strip()) < MIN_ANSWER_LENGTH:
+            st.warning(f"Risposta troppo corta (min {MIN_ANSWER_LENGTH} caratteri)")
+            all_valid = False
+
+        st.divider()
+
+    return all_valid
+
+
+def render_section_c(gemini_model: genai.GenerativeModel):
+    """Sezione C: Generazione risposte AI."""
+    st.header("Sezione C: Risposte AI")
+
+    # Verifica che le risposte utente siano state inserite
+    questions = get_all_questions()
+
+    # Verifica che tutte le risposte siano valide
+    all_user_answers_valid = all(
+        len(st.session_state.user_answers.get(idx, "").strip()) >= MIN_ANSWER_LENGTH
+        for idx in range(len(questions))
+    )
+
+    if not all_user_answers_valid:
+        st.info("Completa prima le risposte ground truth nella Sezione B")
+        return False
+
+    brand_name = st.session_state.brand_name
 
     # Pulsante genera
     if st.button("Genera risposte AI", type="primary", disabled=not brand_name):
@@ -310,7 +380,7 @@ def render_section_b(gemini_model: genai.GenerativeModel):
         can_proceed, error_msg = rate_limit_check()
         if not can_proceed:
             st.error(error_msg)
-            return
+            return False
 
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -363,58 +433,20 @@ def render_section_b(gemini_model: genai.GenerativeModel):
     return len(st.session_state.ai_answers) > 0
 
 
-def render_section_c():
-    """Sezione C: Raccolta risposte utente (ground truth)."""
-    st.header("Sezione C: Risposte Ground Truth")
-
-    if not st.session_state.ai_answers:
-        st.info("Genera prima le risposte AI nella Sezione B")
-        return False
-
-    brand_name = st.session_state.brand_name
-    questions = st.session_state.questions
-
-    st.write("Inserisci le risposte corrette del brand per ogni domanda:")
-
-    all_valid = True
-
-    for idx in sorted(st.session_state.ai_answers.keys()):
-        question = questions[idx].replace('{BRAND_NAME}', brand_name)
-
-        # Text area per risposta utente con la domanda come label
-        user_answer = st.text_area(
-            question,
-            value=st.session_state.user_answers.get(idx, ""),
-            key=f"user_answer_{idx}",
-            height=120,
-            placeholder="Inserisci qui la risposta corretta del brand...",
-            help="Inserisci la risposta corretta secondo il brand (min 20 caratteri)"
-        )
-
-        st.session_state.user_answers[idx] = user_answer
-
-        # Validazione lunghezza
-        if len(user_answer.strip()) < MIN_ANSWER_LENGTH:
-            st.warning(f"Risposta troppo corta (min {MIN_ANSWER_LENGTH} caratteri)")
-            all_valid = False
-
-        st.divider()
-
-    return all_valid
-
-
 def render_section_d(evaluator_model: genai.GenerativeModel):
     """Sezione D: Calcolo Brand Integrity."""
     st.header("Sezione D: Calcolo Brand Integrity")
 
     # Verifica prerequisiti
-    if not st.session_state.ai_answers:
-        st.info("Genera prima le risposte AI nella Sezione B")
+    if not st.session_state.user_answers:
+        st.info("Inserisci le risposte ground truth nella Sezione B")
         return False
 
-    if not st.session_state.user_answers:
-        st.info("Inserisci le risposte ground truth nella Sezione C")
+    if not st.session_state.ai_answers:
+        st.info("Genera prima le risposte AI nella Sezione C")
         return False
+
+    questions = get_all_questions()
 
     # Verifica che tutte le risposte siano valide
     all_valid = all(
@@ -440,7 +472,6 @@ def render_section_d(evaluator_model: genai.GenerativeModel):
         st.session_state.eval_results = {}
         errors = []
 
-        questions = st.session_state.questions
         brand_name = st.session_state.brand_name
 
         for idx in sorted(st.session_state.ai_answers.keys()):
@@ -534,7 +565,7 @@ def render_section_e():
     # Tabella dettagli
     st.subheader("Dettagli per domanda")
 
-    questions = st.session_state.questions
+    questions = get_all_questions()
     brand_name = st.session_state.brand_name
 
     for idx in sorted(st.session_state.eval_results.keys()):
@@ -625,26 +656,26 @@ def main():
 
     st.divider()
 
-    # Sezione B: Generazione risposte AI
+    # Sezione B: Risposte utente (ground truth)
     if setup_ok:
-        ai_answers_ready = render_section_b(gemini_model)
+        user_answers_ready = render_section_b()
     else:
         st.info("Completa la Sezione A per procedere")
-        ai_answers_ready = False
-
-    st.divider()
-
-    # Sezione C: Risposte utente
-    if ai_answers_ready:
-        user_answers_ready = render_section_c()
-    else:
-        st.info("Genera le risposte AI per procedere")
         user_answers_ready = False
 
     st.divider()
 
-    # Sezione D: Calcolo
+    # Sezione C: Generazione risposte AI
     if user_answers_ready:
+        ai_answers_ready = render_section_c(gemini_model)
+    else:
+        st.info("Completa le risposte ground truth per procedere")
+        ai_answers_ready = False
+
+    st.divider()
+
+    # Sezione D: Calcolo
+    if ai_answers_ready:
         calculation_done = render_section_d(evaluator_model)
     else:
         st.info("Completa le sezioni precedenti per calcolare il Brand Integrity Score")
