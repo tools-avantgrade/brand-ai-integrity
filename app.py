@@ -74,12 +74,21 @@ def configure_gemini() -> Tuple[Optional[genai.GenerativeModel], Optional[genai.
         gemini_model_name = st.secrets.get("GEMINI_MODEL", "gemini-3-flash-preview")
         evaluator_model_name = st.secrets.get("EVALUATOR_MODEL", gemini_model_name)
 
-        # Configura i modelli con generation_config per stabilità
+        # Config per modello di generazione
         generation_config = {
             "temperature": 0.2,
             "top_p": 0.8,
             "top_k": 40,
             "max_output_tokens": 1024,
+        }
+
+        # Config per evaluator: più token e response JSON mode
+        evaluator_config = {
+            "temperature": 0.2,
+            "top_p": 0.8,
+            "top_k": 40,
+            "max_output_tokens": 2048,
+            "response_mime_type": "application/json",
         }
 
         gemini_model = genai.GenerativeModel(
@@ -89,7 +98,7 @@ def configure_gemini() -> Tuple[Optional[genai.GenerativeModel], Optional[genai.
 
         evaluator_model = genai.GenerativeModel(
             model_name=evaluator_model_name,
-            generation_config=generation_config
+            generation_config=evaluator_config
         )
 
         return gemini_model, evaluator_model, None
@@ -155,6 +164,7 @@ def evaluate_answer(_model: genai.GenerativeModel, question: str, ai_answer: str
     """
     try:
         prompt = f"""Valuta la coerenza tra la risposta AI e la risposta ground truth (utente).
+Le risposte possono contenere elenchi puntati o testo su più righe.
 
 Domanda: {question}
 
@@ -168,21 +178,21 @@ Criteri di valutazione:
 - "corretta" (score >= 0.75) se semanticamente allineata alla ground truth e non contraddice
 - "sbagliata" (score < 0.75) se contraddice, oppure aggiunge affermazioni specifiche incompatibili, oppure manca elementi essenziali quando la ground truth li indica chiaramente
 
-{"ATTENZIONE: Rispondi SOLO con JSON valido, senza testo aggiuntivo prima o dopo." if retry else ""}
+{"IMPORTANTE: Genera SOLO JSON valido. Il campo 'reason' deve essere una SINGOLA frase breve (max 100 caratteri)." if retry else ""}
 
-Rispondi SOLO con un oggetto JSON nel seguente formato (niente altro testo):
+Restituisci un oggetto JSON con la seguente struttura:
 {{
   "score": 0.85,
   "is_correct": true,
-  "reason": "La risposta AI è semanticamente allineata...",
-  "key_conflicts": ["eventuale conflitto 1", "conflitto 2"]
+  "reason": "Breve spiegazione in una frase",
+  "key_conflicts": ["conflitto 1", "conflitto 2"]
 }}
 
-Dove:
-- score: float da 0.0 a 1.0 (allineamento semantico)
-- is_correct: true se score >= {MATCH_THRESHOLD}, altrimenti false
-- reason: spiegazione breve (1-2 frasi)
-- key_conflicts: array di stringhe (max 3, può essere vuoto)
+Schema JSON:
+- score: numero decimale da 0.0 a 1.0 (allineamento semantico)
+- is_correct: booleano true se score >= {MATCH_THRESHOLD}, altrimenti false
+- reason: stringa breve (max 100 caratteri, 1 frase senza a capo)
+- key_conflicts: array di stringhe (max 3 elementi, può essere vuoto [])
 """
 
         response = _model.generate_content(prompt)
@@ -199,6 +209,9 @@ Dove:
             response_text = "\n".join(lines[1:-1]) if len(lines) > 2 else response_text
             response_text = response_text.replace("```json", "").replace("```", "").strip()
 
+        # Rimuovi eventuali spazi bianchi o caratteri nascosti
+        response_text = response_text.strip()
+
         try:
             result = json.loads(response_text)
 
@@ -212,6 +225,10 @@ Dove:
             result["score"] = float(result["score"])
             result["is_correct"] = bool(result["is_correct"])
 
+            # Normalizza reason: rimuovi newline se presenti
+            if isinstance(result["reason"], str):
+                result["reason"] = result["reason"].replace("\n", " ").strip()
+
             # key_conflicts opzionale
             if "key_conflicts" not in result:
                 result["key_conflicts"] = []
@@ -222,7 +239,7 @@ Dove:
             # Retry una volta
             if not retry:
                 return evaluate_answer(_model, question, ai_answer, user_answer, retry=True)
-            return None, f"Errore parsing JSON: {str(e)}\nRisposta: {response_text[:200]}"
+            return None, f"Errore parsing JSON: {str(e)}\nRisposta: {response_text[:300]}"
 
     except Exception as e:
         return None, f"Errore valutazione: {str(e)}"
