@@ -106,17 +106,9 @@ def configure_ai_models() -> Tuple[Optional[genai.GenerativeModel], Optional[Ope
             "response_mime_type": "application/json",
         }
 
-        # Abilita Google Search grounding per Gemini
-        from google.generativeai.types import Tool, GoogleSearchRetrieval
-
-        search_tool = Tool(
-            google_search_retrieval=GoogleSearchRetrieval()
-        )
-
         gemini_model = genai.GenerativeModel(
             model_name=gemini_model_name,
-            generation_config=generation_config,
-            tools=[search_tool]
+            generation_config=generation_config
         )
 
         evaluator_model = genai.GenerativeModel(
@@ -924,7 +916,7 @@ def main():
         st.header("Informazioni")
         st.markdown(f"""
         **🤖 Gemini:** {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}
-        🌐 *Con Google Search grounding*
+        🌐 *Accesso web nativo*
 
         **💬 ChatGPT:** {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}
         🌐 *Con web search DuckDuckGo*
