@@ -96,12 +96,12 @@ def configure_ai_models() -> Tuple[Optional[genai.GenerativeModel], Optional[Ope
         gemini_model_name = st.secrets.get("GEMINI_MODEL", "gemini-3-flash-preview")
         evaluator_model_name = st.secrets.get("EVALUATOR_MODEL", gemini_model_name)
 
-        # Config per modello di generazione
+        # Config per modello di generazione - aumentato token limit
         generation_config = {
             "temperature": 0.2,
             "top_p": 0.8,
             "top_k": 40,
-            "max_output_tokens": 1024,
+            "max_output_tokens": 2048,  # Aumentato per evitare risposte troncate
         }
 
         # Config per evaluator: più token e response JSON mode
@@ -113,9 +113,20 @@ def configure_ai_models() -> Tuple[Optional[genai.GenerativeModel], Optional[Ope
             "response_mime_type": "application/json",
         }
 
+        # Safety settings per Gemini (più permissivi per evitare blocchi)
+        from google.generativeai.types import HarmCategory, HarmBlockThreshold
+
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        }
+
         gemini_model = genai.GenerativeModel(
             model_name=gemini_model_name,
-            generation_config=generation_config
+            generation_config=generation_config,
+            safety_settings=safety_settings
         )
 
         evaluator_model = genai.GenerativeModel(
@@ -239,10 +250,28 @@ IMPORTANTE:
 Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."""
 
         response = _model.generate_content(prompt)
-        if response and response.text:
+
+        # Controlla se la risposta è stata bloccata dai safety filters
+        if not response.candidates:
+            return None, "Risposta bloccata dai safety filters di Gemini"
+
+        candidate = response.candidates[0]
+
+        # Controlla il finish_reason
+        finish_reason = candidate.finish_reason
+        if finish_reason and str(finish_reason) != "FinishReason.STOP":
+            # La risposta è stata troncata o bloccata
+            if "SAFETY" in str(finish_reason):
+                return None, f"Risposta bloccata per motivi di sicurezza: {finish_reason}"
+            elif "MAX_TOKENS" in str(finish_reason):
+                return None, "Risposta troncata: limite token raggiunto"
+
+        # Estrai il testo
+        if response.text:
             return response.text.strip(), None
         else:
             return None, "Risposta vuota da Gemini"
+
     except Exception as e:
         return None, f"Errore Gemini: {str(e)}"
 
