@@ -148,7 +148,7 @@ def rate_limit_check():
     return True, None
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta a 10 minuti
 def web_search(query: str, max_results: int = 5) -> str:
     """
     Effettua una ricerca web usando DuckDuckGo e restituisce i risultati formattati.
@@ -162,7 +162,7 @@ def web_search(query: str, max_results: int = 5) -> str:
     """
     try:
         with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
+            results = list(ddgs.text(query, max_results=max_results, region='it-it'))
 
         if not results:
             return "Nessun risultato trovato dalla ricerca web."
@@ -181,19 +181,21 @@ def web_search(query: str, max_results: int = 5) -> str:
         return f"Errore durante la ricerca web: {str(e)}"
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta
 def generate_gemini_answer(_model: genai.GenerativeModel, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
-    """Genera risposta da Gemini con Google Search grounding."""
+    """Genera risposta da Gemini con accesso web nativo."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
-        prompt = f"""Rispondi alla seguente domanda utilizzando informazioni aggiornate e verificate.
-Puoi cercare informazioni recenti sul web per fornire una risposta accurata.
-Non inventare dettagli specifici - usa la ricerca per trovare dati verificabili.
+        prompt = f"""Rispondi alla seguente domanda su {brand_name} utilizzando informazioni aggiornate e verificate che puoi trovare online.
 
 Domanda: {final_question}
 
-Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole).
-Includi fonti o informazioni verificate quando possibile."""
+IMPORTANTE:
+- Cerca attivamente informazioni recenti sul web riguardo a {brand_name}
+- Se non trovi informazioni specifiche sul sito ufficiale o fonti verificate, usa la tua conoscenza generale ma specifica che potrebbe non essere aggiornata
+- Non dire semplicemente "non ho trovato informazioni" - fornisci comunque una risposta basata sulla tua conoscenza
+
+Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."""
 
         response = _model.generate_content(prompt)
         if response and response.text:
@@ -204,29 +206,36 @@ Includi fonti o informazioni verificate quando possibile."""
         return None, f"Errore Gemini: {str(e)}"
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta
 def generate_openai_answer(_client: OpenAI, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
     """Genera risposta da ChatGPT con ricerca web."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
         openai_model = st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")
 
-        # Effettua ricerca web
-        search_query = f"{brand_name} {final_question}"
-        search_results = web_search(search_query, max_results=3)
+        # Effettua ricerche multiple con query diverse
+        search_query_1 = f'"{brand_name}" site:{brand_name.lower().replace(" ", "")}.com'
+        search_query_2 = f"{brand_name} {final_question}"
+
+        search_results_1 = web_search(search_query_1, max_results=3)
+        search_results_2 = web_search(search_query_2, max_results=3)
+
+        # Combina i risultati
+        combined_results = f"Ricerca 1 (sito ufficiale):\n{search_results_1}\n\nRicerca 2 (generale):\n{search_results_2}"
 
         response = _client.chat.completions.create(
             model=openai_model,
             messages=[
-                {"role": "system", "content": "Sei un assistente che risponde basandosi su informazioni verificate e aggiornate dal web. Usa i risultati della ricerca forniti per dare risposte accurate."},
+                {"role": "system", "content": "Sei un assistente esperto che risponde basandosi su informazioni verificate dal web. Se i risultati della ricerca non contengono informazioni sufficienti, rispondi comunque usando la tua conoscenza generale del brand, ma specifica che le informazioni potrebbero non essere aggiornate."},
                 {"role": "user", "content": f"""Domanda: {final_question}
 
-{search_results}
+Risultati della ricerca web:
+{combined_results}
 
-Basandoti sui risultati della ricerca web sopra, rispondi alla domanda in italiano, in modo chiaro e diretto (massimo 200 parole).
-Cita informazioni verificabili dai risultati quando possibile."""}
+Rispondi alla domanda in italiano, in modo chiaro e diretto (massimo 200 parole).
+Se i risultati web sono insufficienti, usa la tua conoscenza generale ma menzionalo."""}
             ],
-            temperature=0.2,
+            temperature=0.3,
             max_tokens=1024
         )
 
@@ -238,21 +247,27 @@ Cita informazioni verificabili dai risultati quando possibile."""}
         return None, f"Errore ChatGPT: {str(e)}"
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta
 def generate_claude_answer(_client: Anthropic, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
     """Genera risposta da Claude con ricerca web."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
         claude_model = st.secrets.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 
-        # Effettua ricerca web
-        search_query = f"{brand_name} {final_question}"
-        search_results = web_search(search_query, max_results=3)
+        # Effettua ricerche multiple con query diverse
+        search_query_1 = f'"{brand_name}" site:{brand_name.lower().replace(" ", "")}.com'
+        search_query_2 = f"{brand_name} {final_question}"
+
+        search_results_1 = web_search(search_query_1, max_results=3)
+        search_results_2 = web_search(search_query_2, max_results=3)
+
+        # Combina i risultati
+        combined_results = f"Ricerca 1 (sito ufficiale):\n{search_results_1}\n\nRicerca 2 (generale):\n{search_results_2}"
 
         response = _client.messages.create(
             model=claude_model,
             max_tokens=1024,
-            temperature=0.2,
+            temperature=0.3,
             messages=[
                 {
                     "role": "user",
@@ -260,10 +275,11 @@ def generate_claude_answer(_client: Anthropic, brand_name: str, question: str) -
 
 Domanda: {final_question}
 
-{search_results}
+Risultati della ricerca web:
+{combined_results}
 
-Basandoti sui risultati della ricerca web sopra, rispondi alla domanda in italiano, in modo chiaro e diretto (massimo 200 parole).
-Usa informazioni verificabili dai risultati quando possibile."""
+Rispondi alla domanda in italiano, in modo chiaro e diretto (massimo 200 parole).
+Se i risultati web sono insufficienti, usa la tua conoscenza generale del brand ma specifica che le informazioni potrebbero non essere le più aggiornate."""
                 }
             ]
         )
@@ -514,7 +530,7 @@ def render_section_b(gemini_model: genai.GenerativeModel, openai_client: OpenAI,
     brand_name = st.session_state.brand_name
 
     # Pulsante genera
-    if st.button("🌐 Genera risposte AI con Web Search (Gemini + ChatGPT + Claude)", type="primary", disabled=not brand_name):
+    if st.button("🌐 Genera risposte AI (Web Search + Conoscenza Interna)", type="primary", disabled=not brand_name):
         # Rate limiting
         can_proceed, error_msg = rate_limit_check()
         if not can_proceed:
@@ -893,7 +909,7 @@ def main():
 
     st.title("Brand AI Integrity Tool")
     st.markdown("Misura la Brand Integrity confrontando risposte AI (Gemini, ChatGPT, Claude) con risposte ground truth del brand.")
-    st.info("🌐 **Tutte le AI utilizzano ricerca web in tempo reale** per fornire risposte aggiornate e verificate.")
+    st.info("🌐 **Tutte le AI utilizzano ricerca web + conoscenza interna** per fornire risposte complete e aggiornate.")
 
     # Init session state
     init_session_state()
@@ -916,19 +932,23 @@ def main():
         st.header("Informazioni")
         st.markdown(f"""
         **🤖 Gemini:** {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}
-        🌐 *Accesso web nativo*
+        🌐 *Web nativo + conoscenza*
 
         **💬 ChatGPT:** {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}
-        🌐 *Con web search DuckDuckGo*
+        🌐 *Web search + conoscenza*
 
         **🧠 Claude:** {st.secrets.get('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929')}
-        🌐 *Con web search DuckDuckGo*
+        🌐 *Web search + conoscenza*
 
         **Evaluator:** {st.secrets.get('EVALUATOR_MODEL', 'gemini-3-flash-preview')}
 
         **Soglia match:** {MATCH_THRESHOLD}
 
         **Chiamate API (sessione):** {st.session_state.api_calls_count}
+
+        ---
+
+        💡 *Le AI combinano ricerca web in tempo reale con la loro conoscenza interna per fornire risposte complete.*
         """)
 
         if st.button("Reset sessione"):
