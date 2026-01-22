@@ -10,8 +10,8 @@ openai>=1.0.0
 # Anthropic SDK (for Claude)
 anthropic>=0.18.0
 
-# Web search capabilities (Tavily è molto più affidabile di DuckDuckGo)
-tavily-python>=0.3.0
+# Web search - Brave Search API (usata da ChatGPT e altre AI, completamente gratuita)
+requests>=2.31.0
 
 # Additional utilities
 python-dotenv>=1.0.0

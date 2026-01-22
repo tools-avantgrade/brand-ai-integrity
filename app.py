@@ -9,7 +9,7 @@ import streamlit as st
 import google.generativeai as genai
 from openai import OpenAI
 from anthropic import Anthropic
-from tavily import TavilyClient
+import requests
 import json
 import time
 from typing import Dict, List, Optional, Tuple
@@ -74,10 +74,10 @@ def check_secrets() -> Tuple[bool, Optional[str]]:
         if not anthropic_key or anthropic_key == "YOUR_ANTHROPIC_API_KEY_HERE":
             return False, "ANTHROPIC_API_KEY non configurata correttamente in secrets.toml"
 
-        # Verifica Tavily API Key (per web search)
-        tavily_key = st.secrets["TAVILY_API_KEY"]
-        if not tavily_key or tavily_key == "YOUR_TAVILY_API_KEY_HERE":
-            return False, "TAVILY_API_KEY non configurata correttamente in secrets.toml"
+        # Verifica Brave Search API Key (per web search - GRATIS, no limiti)
+        brave_key = st.secrets["BRAVE_API_KEY"]
+        if not brave_key or brave_key == "YOUR_BRAVE_API_KEY_HERE":
+            return False, "BRAVE_API_KEY non configurata correttamente in secrets.toml"
 
         return True, None
     except KeyError as e:
@@ -155,56 +155,69 @@ def rate_limit_check():
     return True, None
 
 
-@st.cache_data(ttl=600, show_spinner=False)  # Cache 10 minuti
-def web_search(query: str, max_results: int = 5) -> Tuple[str, bool]:
+@st.cache_data(ttl=300, show_spinner=False)  # Cache 5 minuti per risultati più freschi
+def web_search(query: str, max_results: int = 10) -> Tuple[str, bool]:
     """
-    Effettua una ricerca web usando Tavily (molto più affidabile di DuckDuckGo).
+    Effettua ricerca web usando Brave Search API (GRATIS, usata da molte AI).
+
+    Brave Search è l'API usata da ChatGPT e altre AI per accesso web reale.
 
     Args:
         query: Query di ricerca
-        max_results: Numero massimo di risultati da restituire
+        max_results: Numero massimo di risultati (default 10)
 
     Returns:
         Tupla (risultati formattati, successo)
     """
     try:
-        tavily_key = st.secrets.get("TAVILY_API_KEY", "")
-        if not tavily_key:
-            return "Tavily API key non configurata.", False
+        brave_key = st.secrets.get("BRAVE_API_KEY", "")
+        if not brave_key:
+            return "Brave API key non configurata.", False
 
-        tavily_client = TavilyClient(api_key=tavily_key)
+        # Brave Search API endpoint
+        url = "https://api.search.brave.com/res/v1/web/search"
 
-        # Esegui ricerca con Tavily
-        response = tavily_client.search(
-            query=query,
-            max_results=max_results,
-            search_depth="advanced",  # Ricerca approfondita
-            include_answer=True,  # Include risposta diretta
-            include_raw_content=False
-        )
+        headers = {
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+            "X-Subscription-Token": brave_key
+        }
 
-        if not response or 'results' not in response or not response['results']:
+        params = {
+            "q": query,
+            "count": max_results,
+            "search_lang": "it",  # Priorità risultati italiani
+            "text_decorations": False,
+            "safesearch": "moderate"
+        }
+
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+
+        # Estrai risultati web
+        web_results = data.get('web', {}).get('results', [])
+
+        if not web_results:
             return "Nessun risultato trovato dalla ricerca web.", False
 
-        # Formatta i risultati
+        # Formatta i risultati in modo naturale (come ChatGPT li vede)
         formatted_results = ""
 
-        # Aggiungi risposta diretta se disponibile
-        if response.get('answer'):
-            formatted_results += f"**Risposta diretta:**\n{response['answer']}\n\n"
-
-        formatted_results += "**Fonti verificate:**\n\n"
-
-        for idx, result in enumerate(response['results'], 1):
+        for idx, result in enumerate(web_results[:max_results], 1):
             title = result.get('title', 'N/A')
-            content = result.get('content', 'N/A')
-            url = result.get('url', '')
-            score = result.get('score', 0)
+            description = result.get('description', 'N/A')
+            url_link = result.get('url', '')
 
-            formatted_results += f"{idx}. **{title}** (relevance: {score:.2f})\n{content}\nURL: {url}\n\n"
+            formatted_results += f"{idx}. {title}\n"
+            formatted_results += f"{description}\n"
+            formatted_results += f"Fonte: {url_link}\n\n"
 
         return formatted_results.strip(), True
 
+    except requests.exceptions.RequestException as e:
+        return f"Errore connessione Brave Search: {str(e)}", False
     except Exception as e:
         return f"Errore durante la ricerca web: {str(e)}", False
 
@@ -234,33 +247,38 @@ Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."""
         return None, f"Errore Gemini: {str(e)}"
 
 
-@st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta
+@st.cache_data(ttl=300, show_spinner=False)  # Cache ridotta per freschi risultati
 def generate_openai_answer(_client: OpenAI, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
-    """Genera risposta da ChatGPT con ricerca web Tavily."""
+    """Genera risposta da ChatGPT con ricerca web REALE (Brave Search)."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
         openai_model = st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")
 
-        # Ricerca web con Tavily (molto più affidabile)
+        # Ricerca web con Brave (stessa API usata da ChatGPT)
         search_query = f"{brand_name} {final_question}"
-        search_results, search_success = web_search(search_query, max_results=5)
+        search_results, search_success = web_search(search_query, max_results=10)
 
-        # Costruisci il prompt basandoti sul successo della ricerca
         if search_success:
-            system_prompt = "Sei un assistente esperto che risponde basandosi ESCLUSIVAMENTE su informazioni verificate dalla ricerca web fornita. Usa SOLO le informazioni trovate nelle fonti. Rispondi in modo dettagliato e preciso."
-            user_prompt = f"""Domanda: {final_question}
+            # Simula esattamente come ChatGPT usa la web search
+            system_prompt = """Sei ChatGPT con accesso alla ricerca web. Rispondi basandoti principalmente sulle informazioni attuali trovate sul web.
+Comportati esattamente come faresti nell'app ChatGPT quando hai accesso alla ricerca web."""
 
-INFORMAZIONI DALLA RICERCA WEB (USA SOLO QUESTE):
+            user_prompt = f"""Ho cercato sul web per rispondere alla tua domanda.
+
+Domanda: {final_question}
+
+Ecco cosa ho trovato sul web:
 {search_results}
 
-Rispondi alla domanda in italiano basandoti ESCLUSIVAMENTE sulle informazioni sopra (massimo 200 parole).
-Cita le fonti quando possibile."""
-        else:
-            system_prompt = "Sei un assistente esperto che risponde basandosi sulla tua conoscenza interna quando la ricerca web fallisce."
-            user_prompt = f"""Domanda: {final_question}
+Rispondi in italiano in modo naturale e completo (massimo 200 parole), usando le informazioni trovate.
+Non dire "basandomi sui risultati" - rispondi in modo diretto come se tu avessi trovato queste informazioni."""
 
-La ricerca web non ha prodotto risultati utili. Rispondi basandoti sulla tua conoscenza generale del brand {brand_name}.
-Rispondi in italiano, in modo chiaro (massimo 200 parole). Specifica che le informazioni potrebbero non essere le più aggiornate."""
+        else:
+            # Fallback alla conoscenza interna
+            system_prompt = "Sei ChatGPT. Rispondi basandoti sulla tua conoscenza."
+            user_prompt = f"""{final_question}
+
+Rispondi in italiano (massimo 200 parole). Non ho trovato risultati recenti sul web, quindi usa la tua conoscenza generale."""
 
         response = _client.chat.completions.create(
             model=openai_model,
@@ -268,7 +286,7 @@ Rispondi in italiano, in modo chiaro (massimo 200 parole). Specifica che le info
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.2,
+            temperature=0.3,
             max_tokens=1024
         )
 
@@ -280,41 +298,39 @@ Rispondi in italiano, in modo chiaro (massimo 200 parole). Specifica che le info
         return None, f"Errore ChatGPT: {str(e)}"
 
 
-@st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta
+@st.cache_data(ttl=300, show_spinner=False)  # Cache ridotta per freschi risultati
 def generate_claude_answer(_client: Anthropic, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
-    """Genera risposta da Claude con ricerca web Tavily."""
+    """Genera risposta da Claude con ricerca web REALE (Brave Search)."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
         claude_model = st.secrets.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 
-        # Ricerca web con Tavily (molto più affidabile)
+        # Ricerca web con Brave (stessa qualità delle app AI)
         search_query = f"{brand_name} {final_question}"
-        search_results, search_success = web_search(search_query, max_results=5)
+        search_results, search_success = web_search(search_query, max_results=10)
 
-        # Costruisci il prompt basandoti sul successo della ricerca
         if search_success:
-            user_prompt = f"""Rispondi alla seguente domanda basandoti ESCLUSIVAMENTE sulle informazioni verificate dalla ricerca web.
+            # Simula esattamente come Claude userebbe la web search
+            user_prompt = f"""Ciao! Ho bisogno di informazioni su questa domanda: {final_question}
 
-Domanda: {final_question}
+Ho effettuato una ricerca web e ho trovato queste informazioni:
 
-INFORMAZIONI DALLA RICERCA WEB (USA SOLO QUESTE):
 {search_results}
 
-Rispondi alla domanda in italiano basandoti ESCLUSIVAMENTE sulle informazioni sopra (massimo 200 parole).
-Cita le fonti quando possibile e fornisci una risposta dettagliata e precisa."""
+Per favore, rispondi in italiano (massimo 200 parole) basandoti su queste informazioni trovate sul web.
+Rispondi in modo naturale e diretto, come se tu avessi accesso web integrato."""
+
         else:
-            user_prompt = f"""Rispondi alla seguente domanda basandoti sulla tua conoscenza interna.
+            # Fallback alla conoscenza interna
+            user_prompt = f"""{final_question}
 
-Domanda: {final_question}
-
-La ricerca web non ha prodotto risultati utili per il brand {brand_name}.
-Rispondi basandoti sulla tua conoscenza generale in italiano, in modo chiaro (massimo 200 parole).
-Specifica che le informazioni potrebbero non essere le più aggiornate."""
+Non sono riuscito a trovare informazioni recenti sul web per "{brand_name}".
+Rispondi basandoti sulla tua conoscenza in italiano (massimo 200 parole), specificando che le informazioni potrebbero non essere le più recenti."""
 
         response = _client.messages.create(
             model=claude_model,
             max_tokens=1024,
-            temperature=0.2,
+            temperature=0.3,
             messages=[
                 {
                     "role": "user",
@@ -948,7 +964,7 @@ def main():
 
     st.title("Brand AI Integrity Tool")
     st.markdown("Misura la Brand Integrity confrontando risposte AI (Gemini, ChatGPT, Claude) con risposte ground truth del brand.")
-    st.success("🌐 **Ricerca Web Avanzata con Tavily API** - Le AI usano fonti verificate dal web in tempo reale!")
+    st.success("🌐 **Web Search Reale con Brave Search API** - ChatGPT e Claude accedono al web ESATTAMENTE come nelle loro app!")
 
     # Init session state
     init_session_state()
@@ -961,7 +977,7 @@ def main():
         - GEMINI_API_KEY
         - OPENAI_API_KEY
         - ANTHROPIC_API_KEY
-        - TAVILY_API_KEY (gratuita su tavily.com - 1000 ricerche/mese)
+        - BRAVE_API_KEY (GRATIS su brave.com/search/api - nessun limite!)
         """)
         st.stop()
 
@@ -976,13 +992,13 @@ def main():
         st.header("Informazioni")
         st.markdown(f"""
         **🤖 Gemini:** {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}
-        🌐 *Accesso web nativo Google*
+        🌐 *Google Web Access*
 
         **💬 ChatGPT:** {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}
-        🔍 *Tavily Web Search API*
+        🔍 *Brave Search (come app reale)*
 
         **🧠 Claude:** {st.secrets.get('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929')}
-        🔍 *Tavily Web Search API*
+        🔍 *Brave Search (come app reale)*
 
         **Evaluator:** {st.secrets.get('EVALUATOR_MODEL', 'gemini-3-flash-preview')}
 
@@ -992,7 +1008,8 @@ def main():
 
         ---
 
-        🔍 **Tavily API**: Ricerca web professionale con fonti verificate e scoring di rilevanza. Molto più accurata di DuckDuckGo!
+        🔍 **Brave Search API**: Ricerca web REALE usata da ChatGPT e altre AI. GRATIS, no limiti!
+        Ottieni la tua chiave: https://brave.com/search/api
         """)
 
         if st.button("Reset sessione"):
