@@ -9,6 +9,7 @@ import streamlit as st
 import google.generativeai as genai
 from openai import OpenAI
 from anthropic import Anthropic
+from duckduckgo_search import DDGS
 import json
 import time
 from typing import Dict, List, Optional, Tuple
@@ -105,9 +106,17 @@ def configure_ai_models() -> Tuple[Optional[genai.GenerativeModel], Optional[Ope
             "response_mime_type": "application/json",
         }
 
+        # Abilita Google Search grounding per Gemini
+        from google.generativeai.types import Tool, GoogleSearchRetrieval
+
+        search_tool = Tool(
+            google_search_retrieval=GoogleSearchRetrieval()
+        )
+
         gemini_model = genai.GenerativeModel(
             model_name=gemini_model_name,
-            generation_config=generation_config
+            generation_config=generation_config,
+            tools=[search_tool]
         )
 
         evaluator_model = genai.GenerativeModel(
@@ -148,17 +157,51 @@ def rate_limit_check():
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def web_search(query: str, max_results: int = 5) -> str:
+    """
+    Effettua una ricerca web usando DuckDuckGo e restituisce i risultati formattati.
+
+    Args:
+        query: Query di ricerca
+        max_results: Numero massimo di risultati da restituire
+
+    Returns:
+        Stringa formattata con i risultati della ricerca
+    """
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+
+        if not results:
+            return "Nessun risultato trovato dalla ricerca web."
+
+        # Formatta i risultati
+        formatted_results = "Risultati della ricerca web:\n\n"
+        for idx, result in enumerate(results, 1):
+            title = result.get('title', 'N/A')
+            body = result.get('body', 'N/A')
+            href = result.get('href', '')
+            formatted_results += f"{idx}. **{title}**\n{body}\nFonte: {href}\n\n"
+
+        return formatted_results.strip()
+
+    except Exception as e:
+        return f"Errore durante la ricerca web: {str(e)}"
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def generate_gemini_answer(_model: genai.GenerativeModel, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
-    """Genera risposta da Gemini."""
+    """Genera risposta da Gemini con Google Search grounding."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
-        prompt = f"""Rispondi alla seguente domanda in modo conciso e prudente.
-Non inventare dettagli specifici (numeri, date, paesi, certificazioni) se non sei sicuro.
-Se manca informazione, dichiaralo esplicitamente.
+        prompt = f"""Rispondi alla seguente domanda utilizzando informazioni aggiornate e verificate.
+Puoi cercare informazioni recenti sul web per fornire una risposta accurata.
+Non inventare dettagli specifici - usa la ricerca per trovare dati verificabili.
 
 Domanda: {final_question}
 
-Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."""
+Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole).
+Includi fonti o informazioni verificate quando possibile."""
 
         response = _model.generate_content(prompt)
         if response and response.text:
@@ -171,16 +214,25 @@ Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."""
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def generate_openai_answer(_client: OpenAI, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
-    """Genera risposta da ChatGPT."""
+    """Genera risposta da ChatGPT con ricerca web."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
         openai_model = st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")
 
+        # Effettua ricerca web
+        search_query = f"{brand_name} {final_question}"
+        search_results = web_search(search_query, max_results=3)
+
         response = _client.chat.completions.create(
             model=openai_model,
             messages=[
-                {"role": "system", "content": "Sei un assistente che risponde in modo conciso e prudente. Non inventare dettagli specifici se non sei sicuro."},
-                {"role": "user", "content": f"{final_question}\n\nRispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."}
+                {"role": "system", "content": "Sei un assistente che risponde basandosi su informazioni verificate e aggiornate dal web. Usa i risultati della ricerca forniti per dare risposte accurate."},
+                {"role": "user", "content": f"""Domanda: {final_question}
+
+{search_results}
+
+Basandoti sui risultati della ricerca web sopra, rispondi alla domanda in italiano, in modo chiaro e diretto (massimo 200 parole).
+Cita informazioni verificabili dai risultati quando possibile."""}
             ],
             temperature=0.2,
             max_tokens=1024
@@ -196,10 +248,14 @@ def generate_openai_answer(_client: OpenAI, brand_name: str, question: str) -> T
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def generate_claude_answer(_client: Anthropic, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
-    """Genera risposta da Claude."""
+    """Genera risposta da Claude con ricerca web."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
-        claude_model = st.secrets.get("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+        claude_model = st.secrets.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+
+        # Effettua ricerca web
+        search_query = f"{brand_name} {final_question}"
+        search_results = web_search(search_query, max_results=3)
 
         response = _client.messages.create(
             model=claude_model,
@@ -208,13 +264,14 @@ def generate_claude_answer(_client: Anthropic, brand_name: str, question: str) -
             messages=[
                 {
                     "role": "user",
-                    "content": f"""Rispondi alla seguente domanda in modo conciso e prudente.
-Non inventare dettagli specifici (numeri, date, paesi, certificazioni) se non sei sicuro.
-Se manca informazione, dichiaralo esplicitamente.
+                    "content": f"""Rispondi alla seguente domanda basandoti su informazioni verificate e aggiornate dal web.
 
 Domanda: {final_question}
 
-Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."""
+{search_results}
+
+Basandoti sui risultati della ricerca web sopra, rispondi alla domanda in italiano, in modo chiaro e diretto (massimo 200 parole).
+Usa informazioni verificabili dai risultati quando possibile."""
                 }
             ]
         )
@@ -465,7 +522,7 @@ def render_section_b(gemini_model: genai.GenerativeModel, openai_client: OpenAI,
     brand_name = st.session_state.brand_name
 
     # Pulsante genera
-    if st.button("Genera risposte AI (Gemini + ChatGPT + Claude)", type="primary", disabled=not brand_name):
+    if st.button("🌐 Genera risposte AI con Web Search (Gemini + ChatGPT + Claude)", type="primary", disabled=not brand_name):
         # Rate limiting
         can_proceed, error_msg = rate_limit_check()
         if not can_proceed:
@@ -844,6 +901,7 @@ def main():
 
     st.title("Brand AI Integrity Tool")
     st.markdown("Misura la Brand Integrity confrontando risposte AI (Gemini, ChatGPT, Claude) con risposte ground truth del brand.")
+    st.info("🌐 **Tutte le AI utilizzano ricerca web in tempo reale** per fornire risposte aggiornate e verificate.")
 
     # Init session state
     init_session_state()
@@ -866,10 +924,13 @@ def main():
         st.header("Informazioni")
         st.markdown(f"""
         **🤖 Gemini:** {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}
+        🌐 *Con Google Search grounding*
 
         **💬 ChatGPT:** {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}
+        🌐 *Con web search DuckDuckGo*
 
-        **🧠 Claude:** {st.secrets.get('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022')}
+        **🧠 Claude:** {st.secrets.get('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929')}
+        🌐 *Con web search DuckDuckGo*
 
         **Evaluator:** {st.secrets.get('EVALUATOR_MODEL', 'gemini-3-flash-preview')}
 

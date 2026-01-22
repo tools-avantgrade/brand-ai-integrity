@@ -10,5 +10,8 @@ openai>=1.0.0
 # Anthropic SDK (for Claude)
 anthropic>=0.18.0
 
+# Web search capabilities
+duckduckgo-search>=4.0.0
+
 # Additional utilities
 python-dotenv>=1.0.0
