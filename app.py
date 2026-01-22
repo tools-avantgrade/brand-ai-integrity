@@ -9,7 +9,7 @@ import streamlit as st
 import google.generativeai as genai
 from openai import OpenAI
 from anthropic import Anthropic
-from duckduckgo_search import DDGS
+from tavily import TavilyClient
 import json
 import time
 from typing import Dict, List, Optional, Tuple
@@ -47,6 +47,8 @@ def init_session_state():
         st.session_state.api_calls_count = 0
     if 'last_api_call_time' not in st.session_state:
         st.session_state.last_api_call_time = 0
+    if 'use_web_search' not in st.session_state:
+        st.session_state.use_web_search = False  # Default: OFF
 
 
 def get_all_questions():
@@ -71,6 +73,11 @@ def check_secrets() -> Tuple[bool, Optional[str]]:
         anthropic_key = st.secrets["ANTHROPIC_API_KEY"]
         if not anthropic_key or anthropic_key == "YOUR_ANTHROPIC_API_KEY_HERE":
             return False, "ANTHROPIC_API_KEY non configurata correttamente in secrets.toml"
+
+        # Verifica Tavily API Key (per web search)
+        tavily_key = st.secrets["TAVILY_API_KEY"]
+        if not tavily_key or tavily_key == "YOUR_TAVILY_API_KEY_HERE":
+            return False, "TAVILY_API_KEY non configurata correttamente in secrets.toml"
 
         return True, None
     except KeyError as e:
@@ -148,37 +155,58 @@ def rate_limit_check():
     return True, None
 
 
-@st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta a 10 minuti
-def web_search(query: str, max_results: int = 5) -> str:
+@st.cache_data(ttl=600, show_spinner=False)  # Cache 10 minuti
+def web_search(query: str, max_results: int = 5) -> Tuple[str, bool]:
     """
-    Effettua una ricerca web usando DuckDuckGo e restituisce i risultati formattati.
+    Effettua una ricerca web usando Tavily (molto più affidabile di DuckDuckGo).
 
     Args:
         query: Query di ricerca
         max_results: Numero massimo di risultati da restituire
 
     Returns:
-        Stringa formattata con i risultati della ricerca
+        Tupla (risultati formattati, successo)
     """
     try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results, region='it-it'))
+        tavily_key = st.secrets.get("TAVILY_API_KEY", "")
+        if not tavily_key:
+            return "Tavily API key non configurata.", False
 
-        if not results:
-            return "Nessun risultato trovato dalla ricerca web."
+        tavily_client = TavilyClient(api_key=tavily_key)
+
+        # Esegui ricerca con Tavily
+        response = tavily_client.search(
+            query=query,
+            max_results=max_results,
+            search_depth="advanced",  # Ricerca approfondita
+            include_answer=True,  # Include risposta diretta
+            include_raw_content=False
+        )
+
+        if not response or 'results' not in response or not response['results']:
+            return "Nessun risultato trovato dalla ricerca web.", False
 
         # Formatta i risultati
-        formatted_results = "Risultati della ricerca web:\n\n"
-        for idx, result in enumerate(results, 1):
-            title = result.get('title', 'N/A')
-            body = result.get('body', 'N/A')
-            href = result.get('href', '')
-            formatted_results += f"{idx}. **{title}**\n{body}\nFonte: {href}\n\n"
+        formatted_results = ""
 
-        return formatted_results.strip()
+        # Aggiungi risposta diretta se disponibile
+        if response.get('answer'):
+            formatted_results += f"**Risposta diretta:**\n{response['answer']}\n\n"
+
+        formatted_results += "**Fonti verificate:**\n\n"
+
+        for idx, result in enumerate(response['results'], 1):
+            title = result.get('title', 'N/A')
+            content = result.get('content', 'N/A')
+            url = result.get('url', '')
+            score = result.get('score', 0)
+
+            formatted_results += f"{idx}. **{title}** (relevance: {score:.2f})\n{content}\nURL: {url}\n\n"
+
+        return formatted_results.strip(), True
 
     except Exception as e:
-        return f"Errore durante la ricerca web: {str(e)}"
+        return f"Errore durante la ricerca web: {str(e)}", False
 
 
 @st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta
@@ -208,34 +236,39 @@ Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."""
 
 @st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta
 def generate_openai_answer(_client: OpenAI, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
-    """Genera risposta da ChatGPT con ricerca web."""
+    """Genera risposta da ChatGPT con ricerca web Tavily."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
         openai_model = st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")
 
-        # Effettua ricerche multiple con query diverse
-        search_query_1 = f'"{brand_name}" site:{brand_name.lower().replace(" ", "")}.com'
-        search_query_2 = f"{brand_name} {final_question}"
+        # Ricerca web con Tavily (molto più affidabile)
+        search_query = f"{brand_name} {final_question}"
+        search_results, search_success = web_search(search_query, max_results=5)
 
-        search_results_1 = web_search(search_query_1, max_results=3)
-        search_results_2 = web_search(search_query_2, max_results=3)
+        # Costruisci il prompt basandoti sul successo della ricerca
+        if search_success:
+            system_prompt = "Sei un assistente esperto che risponde basandosi ESCLUSIVAMENTE su informazioni verificate dalla ricerca web fornita. Usa SOLO le informazioni trovate nelle fonti. Rispondi in modo dettagliato e preciso."
+            user_prompt = f"""Domanda: {final_question}
 
-        # Combina i risultati
-        combined_results = f"Ricerca 1 (sito ufficiale):\n{search_results_1}\n\nRicerca 2 (generale):\n{search_results_2}"
+INFORMAZIONI DALLA RICERCA WEB (USA SOLO QUESTE):
+{search_results}
+
+Rispondi alla domanda in italiano basandoti ESCLUSIVAMENTE sulle informazioni sopra (massimo 200 parole).
+Cita le fonti quando possibile."""
+        else:
+            system_prompt = "Sei un assistente esperto che risponde basandosi sulla tua conoscenza interna quando la ricerca web fallisce."
+            user_prompt = f"""Domanda: {final_question}
+
+La ricerca web non ha prodotto risultati utili. Rispondi basandoti sulla tua conoscenza generale del brand {brand_name}.
+Rispondi in italiano, in modo chiaro (massimo 200 parole). Specifica che le informazioni potrebbero non essere le più aggiornate."""
 
         response = _client.chat.completions.create(
             model=openai_model,
             messages=[
-                {"role": "system", "content": "Sei un assistente esperto che risponde basandosi su informazioni verificate dal web. Se i risultati della ricerca non contengono informazioni sufficienti, rispondi comunque usando la tua conoscenza generale del brand, ma specifica che le informazioni potrebbero non essere aggiornate."},
-                {"role": "user", "content": f"""Domanda: {final_question}
-
-Risultati della ricerca web:
-{combined_results}
-
-Rispondi alla domanda in italiano, in modo chiaro e diretto (massimo 200 parole).
-Se i risultati web sono insufficienti, usa la tua conoscenza generale ma menzionalo."""}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
             ],
-            temperature=0.3,
+            temperature=0.2,
             max_tokens=1024
         )
 
@@ -249,37 +282,43 @@ Se i risultati web sono insufficienti, usa la tua conoscenza generale ma menzion
 
 @st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta
 def generate_claude_answer(_client: Anthropic, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
-    """Genera risposta da Claude con ricerca web."""
+    """Genera risposta da Claude con ricerca web Tavily."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
         claude_model = st.secrets.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 
-        # Effettua ricerche multiple con query diverse
-        search_query_1 = f'"{brand_name}" site:{brand_name.lower().replace(" ", "")}.com'
-        search_query_2 = f"{brand_name} {final_question}"
+        # Ricerca web con Tavily (molto più affidabile)
+        search_query = f"{brand_name} {final_question}"
+        search_results, search_success = web_search(search_query, max_results=5)
 
-        search_results_1 = web_search(search_query_1, max_results=3)
-        search_results_2 = web_search(search_query_2, max_results=3)
+        # Costruisci il prompt basandoti sul successo della ricerca
+        if search_success:
+            user_prompt = f"""Rispondi alla seguente domanda basandoti ESCLUSIVAMENTE sulle informazioni verificate dalla ricerca web.
 
-        # Combina i risultati
-        combined_results = f"Ricerca 1 (sito ufficiale):\n{search_results_1}\n\nRicerca 2 (generale):\n{search_results_2}"
+Domanda: {final_question}
+
+INFORMAZIONI DALLA RICERCA WEB (USA SOLO QUESTE):
+{search_results}
+
+Rispondi alla domanda in italiano basandoti ESCLUSIVAMENTE sulle informazioni sopra (massimo 200 parole).
+Cita le fonti quando possibile e fornisci una risposta dettagliata e precisa."""
+        else:
+            user_prompt = f"""Rispondi alla seguente domanda basandoti sulla tua conoscenza interna.
+
+Domanda: {final_question}
+
+La ricerca web non ha prodotto risultati utili per il brand {brand_name}.
+Rispondi basandoti sulla tua conoscenza generale in italiano, in modo chiaro (massimo 200 parole).
+Specifica che le informazioni potrebbero non essere le più aggiornate."""
 
         response = _client.messages.create(
             model=claude_model,
             max_tokens=1024,
-            temperature=0.3,
+            temperature=0.2,
             messages=[
                 {
                     "role": "user",
-                    "content": f"""Rispondi alla seguente domanda basandoti su informazioni verificate e aggiornate dal web.
-
-Domanda: {final_question}
-
-Risultati della ricerca web:
-{combined_results}
-
-Rispondi alla domanda in italiano, in modo chiaro e diretto (massimo 200 parole).
-Se i risultati web sono insufficienti, usa la tua conoscenza generale del brand ma specifica che le informazioni potrebbero non essere le più aggiornate."""
+                    "content": user_prompt
                 }
             ]
         )
@@ -909,7 +948,7 @@ def main():
 
     st.title("Brand AI Integrity Tool")
     st.markdown("Misura la Brand Integrity confrontando risposte AI (Gemini, ChatGPT, Claude) con risposte ground truth del brand.")
-    st.info("🌐 **Tutte le AI utilizzano ricerca web + conoscenza interna** per fornire risposte complete e aggiornate.")
+    st.success("🌐 **Ricerca Web Avanzata con Tavily API** - Le AI usano fonti verificate dal web in tempo reale!")
 
     # Init session state
     init_session_state()
@@ -918,7 +957,12 @@ def main():
     secrets_ok, error_msg = check_secrets()
     if not secrets_ok:
         st.error(f"Errore configurazione: {error_msg}")
-        st.info("Configura il file .streamlit/secrets.toml con le chiavi API di Gemini, OpenAI e Anthropic")
+        st.info("""Configura il file .streamlit/secrets.toml con le chiavi API:
+        - GEMINI_API_KEY
+        - OPENAI_API_KEY
+        - ANTHROPIC_API_KEY
+        - TAVILY_API_KEY (gratuita su tavily.com - 1000 ricerche/mese)
+        """)
         st.stop()
 
     # Configure AI models
@@ -932,13 +976,13 @@ def main():
         st.header("Informazioni")
         st.markdown(f"""
         **🤖 Gemini:** {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}
-        🌐 *Web nativo + conoscenza*
+        🌐 *Accesso web nativo Google*
 
         **💬 ChatGPT:** {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}
-        🌐 *Web search + conoscenza*
+        🔍 *Tavily Web Search API*
 
         **🧠 Claude:** {st.secrets.get('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929')}
-        🌐 *Web search + conoscenza*
+        🔍 *Tavily Web Search API*
 
         **Evaluator:** {st.secrets.get('EVALUATOR_MODEL', 'gemini-3-flash-preview')}
 
@@ -948,7 +992,7 @@ def main():
 
         ---
 
-        💡 *Le AI combinano ricerca web in tempo reale con la loro conoscenza interna per fornire risposte complete.*
+        🔍 **Tavily API**: Ricerca web professionale con fonti verificate e scoring di rilevanza. Molto più accurata di DuckDuckGo!
         """)
 
         if st.button("Reset sessione"):
