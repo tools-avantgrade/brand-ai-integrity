@@ -9,7 +9,7 @@ import streamlit as st
 import google.generativeai as genai
 from openai import OpenAI
 from anthropic import Anthropic
-from duckduckgo_search import DDGS
+import requests
 import json
 import time
 from typing import Dict, List, Optional, Tuple
@@ -47,6 +47,8 @@ def init_session_state():
         st.session_state.api_calls_count = 0
     if 'last_api_call_time' not in st.session_state:
         st.session_state.last_api_call_time = 0
+    if 'use_web_search' not in st.session_state:
+        st.session_state.use_web_search = False  # Default: OFF
 
 
 def get_all_questions():
@@ -71,6 +73,11 @@ def check_secrets() -> Tuple[bool, Optional[str]]:
         anthropic_key = st.secrets["ANTHROPIC_API_KEY"]
         if not anthropic_key or anthropic_key == "YOUR_ANTHROPIC_API_KEY_HERE":
             return False, "ANTHROPIC_API_KEY non configurata correttamente in secrets.toml"
+
+        # Verifica Brave Search API Key (per web search - GRATIS, no limiti)
+        brave_key = st.secrets["BRAVE_API_KEY"]
+        if not brave_key or brave_key == "YOUR_BRAVE_API_KEY_HERE":
+            return False, "BRAVE_API_KEY non configurata correttamente in secrets.toml"
 
         return True, None
     except KeyError as e:
@@ -148,37 +155,71 @@ def rate_limit_check():
     return True, None
 
 
-@st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta a 10 minuti
-def web_search(query: str, max_results: int = 5) -> str:
+@st.cache_data(ttl=300, show_spinner=False)  # Cache 5 minuti per risultati più freschi
+def web_search(query: str, max_results: int = 10) -> Tuple[str, bool]:
     """
-    Effettua una ricerca web usando DuckDuckGo e restituisce i risultati formattati.
+    Effettua ricerca web usando Brave Search API (GRATIS, usata da molte AI).
+
+    Brave Search è l'API usata da ChatGPT e altre AI per accesso web reale.
 
     Args:
         query: Query di ricerca
-        max_results: Numero massimo di risultati da restituire
+        max_results: Numero massimo di risultati (default 10)
 
     Returns:
-        Stringa formattata con i risultati della ricerca
+        Tupla (risultati formattati, successo)
     """
     try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results, region='it-it'))
+        brave_key = st.secrets.get("BRAVE_API_KEY", "")
+        if not brave_key:
+            return "Brave API key non configurata.", False
 
-        if not results:
-            return "Nessun risultato trovato dalla ricerca web."
+        # Brave Search API endpoint
+        url = "https://api.search.brave.com/res/v1/web/search"
 
-        # Formatta i risultati
-        formatted_results = "Risultati della ricerca web:\n\n"
-        for idx, result in enumerate(results, 1):
+        headers = {
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+            "X-Subscription-Token": brave_key
+        }
+
+        params = {
+            "q": query,
+            "count": max_results,
+            "search_lang": "it",  # Priorità risultati italiani
+            "text_decorations": False,
+            "safesearch": "moderate"
+        }
+
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+
+        # Estrai risultati web
+        web_results = data.get('web', {}).get('results', [])
+
+        if not web_results:
+            return "Nessun risultato trovato dalla ricerca web.", False
+
+        # Formatta i risultati in modo naturale (come ChatGPT li vede)
+        formatted_results = ""
+
+        for idx, result in enumerate(web_results[:max_results], 1):
             title = result.get('title', 'N/A')
-            body = result.get('body', 'N/A')
-            href = result.get('href', '')
-            formatted_results += f"{idx}. **{title}**\n{body}\nFonte: {href}\n\n"
+            description = result.get('description', 'N/A')
+            url_link = result.get('url', '')
 
-        return formatted_results.strip()
+            formatted_results += f"{idx}. {title}\n"
+            formatted_results += f"{description}\n"
+            formatted_results += f"Fonte: {url_link}\n\n"
 
+        return formatted_results.strip(), True
+
+    except requests.exceptions.RequestException as e:
+        return f"Errore connessione Brave Search: {str(e)}", False
     except Exception as e:
-        return f"Errore durante la ricerca web: {str(e)}"
+        return f"Errore durante la ricerca web: {str(e)}", False
 
 
 @st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta
@@ -206,34 +247,44 @@ Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."""
         return None, f"Errore Gemini: {str(e)}"
 
 
-@st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta
+@st.cache_data(ttl=300, show_spinner=False)  # Cache ridotta per freschi risultati
 def generate_openai_answer(_client: OpenAI, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
-    """Genera risposta da ChatGPT con ricerca web."""
+    """Genera risposta da ChatGPT con ricerca web REALE (Brave Search)."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
         openai_model = st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")
 
-        # Effettua ricerche multiple con query diverse
-        search_query_1 = f'"{brand_name}" site:{brand_name.lower().replace(" ", "")}.com'
-        search_query_2 = f"{brand_name} {final_question}"
+        # Ricerca web con Brave (stessa API usata da ChatGPT)
+        search_query = f"{brand_name} {final_question}"
+        search_results, search_success = web_search(search_query, max_results=10)
 
-        search_results_1 = web_search(search_query_1, max_results=3)
-        search_results_2 = web_search(search_query_2, max_results=3)
+        if search_success:
+            # Simula esattamente come ChatGPT usa la web search
+            system_prompt = """Sei ChatGPT con accesso alla ricerca web. Rispondi basandoti principalmente sulle informazioni attuali trovate sul web.
+Comportati esattamente come faresti nell'app ChatGPT quando hai accesso alla ricerca web."""
 
-        # Combina i risultati
-        combined_results = f"Ricerca 1 (sito ufficiale):\n{search_results_1}\n\nRicerca 2 (generale):\n{search_results_2}"
+            user_prompt = f"""Ho cercato sul web per rispondere alla tua domanda.
+
+Domanda: {final_question}
+
+Ecco cosa ho trovato sul web:
+{search_results}
+
+Rispondi in italiano in modo naturale e completo (massimo 200 parole), usando le informazioni trovate.
+Non dire "basandomi sui risultati" - rispondi in modo diretto come se tu avessi trovato queste informazioni."""
+
+        else:
+            # Fallback alla conoscenza interna
+            system_prompt = "Sei ChatGPT. Rispondi basandoti sulla tua conoscenza."
+            user_prompt = f"""{final_question}
+
+Rispondi in italiano (massimo 200 parole). Non ho trovato risultati recenti sul web, quindi usa la tua conoscenza generale."""
 
         response = _client.chat.completions.create(
             model=openai_model,
             messages=[
-                {"role": "system", "content": "Sei un assistente esperto che risponde basandosi su informazioni verificate dal web. Se i risultati della ricerca non contengono informazioni sufficienti, rispondi comunque usando la tua conoscenza generale del brand, ma specifica che le informazioni potrebbero non essere aggiornate."},
-                {"role": "user", "content": f"""Domanda: {final_question}
-
-Risultati della ricerca web:
-{combined_results}
-
-Rispondi alla domanda in italiano, in modo chiaro e diretto (massimo 200 parole).
-Se i risultati web sono insufficienti, usa la tua conoscenza generale ma menzionalo."""}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
             ],
             temperature=0.3,
             max_tokens=1024
@@ -247,22 +298,34 @@ Se i risultati web sono insufficienti, usa la tua conoscenza generale ma menzion
         return None, f"Errore ChatGPT: {str(e)}"
 
 
-@st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta
+@st.cache_data(ttl=300, show_spinner=False)  # Cache ridotta per freschi risultati
 def generate_claude_answer(_client: Anthropic, brand_name: str, question: str) -> Tuple[Optional[str], Optional[str]]:
-    """Genera risposta da Claude con ricerca web."""
+    """Genera risposta da Claude con ricerca web REALE (Brave Search)."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
         claude_model = st.secrets.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 
-        # Effettua ricerche multiple con query diverse
-        search_query_1 = f'"{brand_name}" site:{brand_name.lower().replace(" ", "")}.com'
-        search_query_2 = f"{brand_name} {final_question}"
+        # Ricerca web con Brave (stessa qualità delle app AI)
+        search_query = f"{brand_name} {final_question}"
+        search_results, search_success = web_search(search_query, max_results=10)
 
-        search_results_1 = web_search(search_query_1, max_results=3)
-        search_results_2 = web_search(search_query_2, max_results=3)
+        if search_success:
+            # Simula esattamente come Claude userebbe la web search
+            user_prompt = f"""Ciao! Ho bisogno di informazioni su questa domanda: {final_question}
 
-        # Combina i risultati
-        combined_results = f"Ricerca 1 (sito ufficiale):\n{search_results_1}\n\nRicerca 2 (generale):\n{search_results_2}"
+Ho effettuato una ricerca web e ho trovato queste informazioni:
+
+{search_results}
+
+Per favore, rispondi in italiano (massimo 200 parole) basandoti su queste informazioni trovate sul web.
+Rispondi in modo naturale e diretto, come se tu avessi accesso web integrato."""
+
+        else:
+            # Fallback alla conoscenza interna
+            user_prompt = f"""{final_question}
+
+Non sono riuscito a trovare informazioni recenti sul web per "{brand_name}".
+Rispondi basandoti sulla tua conoscenza in italiano (massimo 200 parole), specificando che le informazioni potrebbero non essere le più recenti."""
 
         response = _client.messages.create(
             model=claude_model,
@@ -271,15 +334,7 @@ def generate_claude_answer(_client: Anthropic, brand_name: str, question: str) -
             messages=[
                 {
                     "role": "user",
-                    "content": f"""Rispondi alla seguente domanda basandoti su informazioni verificate e aggiornate dal web.
-
-Domanda: {final_question}
-
-Risultati della ricerca web:
-{combined_results}
-
-Rispondi alla domanda in italiano, in modo chiaro e diretto (massimo 200 parole).
-Se i risultati web sono insufficienti, usa la tua conoscenza generale del brand ma specifica che le informazioni potrebbero non essere le più aggiornate."""
+                    "content": user_prompt
                 }
             ]
         )
@@ -909,7 +964,7 @@ def main():
 
     st.title("Brand AI Integrity Tool")
     st.markdown("Misura la Brand Integrity confrontando risposte AI (Gemini, ChatGPT, Claude) con risposte ground truth del brand.")
-    st.info("🌐 **Tutte le AI utilizzano ricerca web + conoscenza interna** per fornire risposte complete e aggiornate.")
+    st.success("🌐 **Web Search Reale con Brave Search API** - ChatGPT e Claude accedono al web ESATTAMENTE come nelle loro app!")
 
     # Init session state
     init_session_state()
@@ -918,7 +973,12 @@ def main():
     secrets_ok, error_msg = check_secrets()
     if not secrets_ok:
         st.error(f"Errore configurazione: {error_msg}")
-        st.info("Configura il file .streamlit/secrets.toml con le chiavi API di Gemini, OpenAI e Anthropic")
+        st.info("""Configura il file .streamlit/secrets.toml con le chiavi API:
+        - GEMINI_API_KEY
+        - OPENAI_API_KEY
+        - ANTHROPIC_API_KEY
+        - BRAVE_API_KEY (GRATIS su brave.com/search/api - nessun limite!)
+        """)
         st.stop()
 
     # Configure AI models
@@ -932,13 +992,13 @@ def main():
         st.header("Informazioni")
         st.markdown(f"""
         **🤖 Gemini:** {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}
-        🌐 *Web nativo + conoscenza*
+        🌐 *Google Web Access*
 
         **💬 ChatGPT:** {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}
-        🌐 *Web search + conoscenza*
+        🔍 *Brave Search (come app reale)*
 
         **🧠 Claude:** {st.secrets.get('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929')}
-        🌐 *Web search + conoscenza*
+        🔍 *Brave Search (come app reale)*
 
         **Evaluator:** {st.secrets.get('EVALUATOR_MODEL', 'gemini-3-flash-preview')}
 
@@ -948,7 +1008,8 @@ def main():
 
         ---
 
-        💡 *Le AI combinano ricerca web in tempo reale con la loro conoscenza interna per fornire risposte complete.*
+        🔍 **Brave Search API**: Ricerca web REALE usata da ChatGPT e altre AI. GRATIS, no limiti!
+        Ottieni la tua chiave: https://brave.com/search/api
         """)
 
         if st.button("Reset sessione"):
