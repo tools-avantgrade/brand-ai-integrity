@@ -242,120 +242,283 @@ def web_search(query: str, max_results: int = 10) -> Tuple[str, bool]:
 
 def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, questions: List[str], user_answers: Dict, ai_answers: Dict) -> BytesIO:
     """
-    Genera un report PDF completo del Brand AI Integrity Score.
+    Genera un report PDF completo e professionale del Brand AI Integrity Score.
 
     Returns:
         BytesIO: Buffer contenente il PDF generato
     """
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=30)
 
     # Styles
     styles = getSampleStyleSheet()
+
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
-        fontSize=24,
+        fontSize=28,
         textColor=colors.HexColor('#1f77b4'),
-        spaceAfter=30,
-        alignment=1  # Center
+        spaceAfter=10,
+        alignment=1,
+        fontName='Helvetica-Bold'
+    )
+
+    subtitle_style = ParagraphStyle(
+        'Subtitle',
+        parent=styles['Normal'],
+        fontSize=14,
+        textColor=colors.HexColor('#666666'),
+        spaceAfter=20,
+        alignment=1
     )
 
     heading_style = ParagraphStyle(
         'CustomHeading',
         parent=styles['Heading2'],
-        fontSize=16,
+        fontSize=18,
         textColor=colors.HexColor('#2ca02c'),
-        spaceAfter=12
+        spaceAfter=15,
+        spaceBefore=10,
+        fontName='Helvetica-Bold'
+    )
+
+    subheading_style = ParagraphStyle(
+        'SubHeading',
+        parent=styles['Heading3'],
+        fontSize=14,
+        textColor=colors.HexColor('#333333'),
+        spaceAfter=10,
+        fontName='Helvetica-Bold'
     )
 
     # Build PDF content
     story = []
 
-    # Title
-    story.append(Paragraph(f"Brand AI Integrity Report", title_style))
-    story.append(Paragraph(f"Brand: <b>{brand_name}</b>", styles['Heading2']))
-    story.append(Paragraph(f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
+    # === TITLE PAGE ===
+    story.append(Spacer(1, 0.5*inch))
+    story.append(Paragraph("BRAND AI INTEGRITY REPORT", title_style))
+    story.append(Paragraph(f"Brand: {brand_name}", subtitle_style))
+    story.append(Paragraph(f"Data Analisi: {datetime.now().strftime('%d/%m/%Y - %H:%M')}", subtitle_style))
+    story.append(Spacer(1, 0.5*inch))
 
-    # Executive Summary
-    story.append(Paragraph("Executive Summary", heading_style))
+    # === EXECUTIVE SUMMARY ===
+    story.append(Paragraph("EXECUTIVE SUMMARY", heading_style))
+
     score = summary['integrity_score']
-    score_color = 'green' if score >= 80 else ('orange' if score >= 60 else 'red')
+    ai_scores = summary.get('ai_scores', {})
 
+    # Tabella score principale
     summary_data = [
-        ['Metric', 'Valore'],
-        ['Brand Integrity Score', f"{score}/100"],
-        ['Domande Totali', str(summary['total'])],
-        ['Risposte Corrette (media)', str(summary['correct'])],
-        ['Risposte Sbagliate (media)', str(summary['incorrect'])],
+        ['METRICA', 'VALORE', 'VALUTAZIONE'],
+        ['Brand Integrity Score (Media)', f"{score}/100", get_judgment(score)],
+        ['', '', ''],
+        ['Score Gemini', f"{ai_scores.get('gemini', 0)}/100", get_judgment(ai_scores.get('gemini', 0))],
+        ['Score ChatGPT', f"{ai_scores.get('openai', 0)}/100", get_judgment(ai_scores.get('openai', 0))],
+        ['Score Claude', f"{ai_scores.get('claude', 0)}/100", get_judgment(ai_scores.get('claude', 0))],
+        ['', '', ''],
+        ['Domande Totali', str(summary['total']), ''],
+        ['Risposte Corrette (media)', str(summary['correct']), ''],
+        ['Risposte da Migliorare (media)', str(summary['incorrect']), ''],
     ]
 
-    # Add AI scores
-    ai_scores = summary.get('ai_scores', {})
-    summary_data.append(['Score Gemini', f"{ai_scores.get('gemini', 0)}/100"])
-    summary_data.append(['Score ChatGPT', f"{ai_scores.get('openai', 0)}/100"])
-    summary_data.append(['Score Claude', f"{ai_scores.get('claude', 0)}/100"])
-
-    t = Table(summary_data, colWidths=[3*inch, 2*inch])
+    t = Table(summary_data, colWidths=[2.5*inch, 1.5*inch, 2*inch])
     t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        # Header
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, 0), 12),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ('TOPPADDING', (0, 0), (-1, 0), 12),
+
+        # Score principale - colorato
+        ('BACKGROUND', (0, 1), (-1, 1), get_color_for_score(score)),
+        ('TEXTCOLOR', (0, 1), (-1, 1), colors.white),
+        ('FONTNAME', (0, 1), (-1, 1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 1), (-1, 1), 14),
+
+        # Score AI individuali
+        ('BACKGROUND', (0, 3), (-1, 3), get_color_for_score(ai_scores.get('gemini', 0))),
+        ('TEXTCOLOR', (0, 3), (-1, 3), colors.white),
+        ('BACKGROUND', (0, 4), (-1, 4), get_color_for_score(ai_scores.get('openai', 0))),
+        ('TEXTCOLOR', (0, 4), (-1, 4), colors.white),
+        ('BACKGROUND', (0, 5), (-1, 5), get_color_for_score(ai_scores.get('claude', 0))),
+        ('TEXTCOLOR', (0, 5), (-1, 5), colors.white),
+
+        # Resto tabella
+        ('BACKGROUND', (0, 7), (-1, -1), colors.beige),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
     ]))
 
     story.append(t)
     story.append(Spacer(1, 0.3*inch))
 
-    # Detailed Results
+    # === LEGENDA ===
+    story.append(Paragraph("<b>Legenda Valutazioni:</b>", styles['Normal']))
+    legend_data = [
+        ['', 'ECCELLENTE (80-100)', 'BUONO (60-79)', 'DA MIGLIORARE (<60)'],
+    ]
+    legend_table = Table(legend_data, colWidths=[0.5*inch, 1.8*inch, 1.8*inch, 1.8*inch])
+    legend_table.setStyle(TableStyle([
+        ('BACKGROUND', (1, 0), (1, 0), colors.HexColor('#4CAF50')),
+        ('BACKGROUND', (2, 0), (2, 0), colors.HexColor('#FF9800')),
+        ('BACKGROUND', (3, 0), (3, 0), colors.HexColor('#F44336')),
+        ('TEXTCOLOR', (1, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+    ]))
+    story.append(legend_table)
+
+    # === DETTAGLI PER DOMANDA ===
     story.append(PageBreak())
-    story.append(Paragraph("Dettagli per Domanda", heading_style))
+    story.append(Paragraph("ANALISI DETTAGLIATA PER DOMANDA", heading_style))
+    story.append(Paragraph("Confronto tra risposte Ground Truth (del brand) e risposte delle AI", styles['Normal']))
+    story.append(Spacer(1, 0.2*inch))
 
     for idx in sorted(eval_results.keys()):
         result = eval_results[idx]
         question = questions[idx].replace("{BRAND_NAME}", brand_name)
+        avg_score = result.get('average_score', 0)
+        is_correct = result.get('is_correct', False)
 
-        story.append(Paragraph(f"<b>Domanda {idx + 1}:</b> {question}", styles['Normal']))
+        # === HEADER DOMANDA ===
+        story.append(Paragraph(f"<b>DOMANDA {idx + 1}</b>", subheading_style))
+        story.append(Paragraph(question, styles['Normal']))
         story.append(Spacer(1, 0.1*inch))
 
-        # Ground truth
-        story.append(Paragraph(f"<b>Risposta Ground Truth:</b>", styles['Normal']))
-        story.append(Paragraph(user_answers[idx], styles['Normal']))
+        # Score medio domanda
+        score_status = "✓ CORRETTA" if is_correct else "✗ DA MIGLIORARE"
+        score_color_hex = '#4CAF50' if is_correct else '#F44336'
+
+        status_data = [['Score Medio', f"{avg_score:.2f}/1.00", score_status]]
+        status_table = Table(status_data, colWidths=[1.5*inch, 1.5*inch, 2*inch])
+        status_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(score_color_hex)),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.white),
+        ]))
+        story.append(status_table)
+        story.append(Spacer(1, 0.15*inch))
+
+        # === GROUND TRUTH ===
+        story.append(Paragraph("<b>✓ RISPOSTA GROUND TRUTH (Brand):</b>", styles['Normal']))
+        ground_truth_data = [[user_answers[idx]]]
+        gt_table = Table(ground_truth_data, colWidths=[6*inch])
+        gt_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#E8F5E9')),
+            ('BOX', (0, 0), (-1, -1), 2, colors.HexColor('#4CAF50')),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ]))
+        story.append(gt_table)
+        story.append(Spacer(1, 0.15*inch))
+
+        # === RISPOSTE AI ===
+        story.append(Paragraph("<b>RISPOSTE DELLE AI:</b>", styles['Normal']))
         story.append(Spacer(1, 0.1*inch))
 
-        # AI responses
         if idx in ai_answers:
             ai_ans = ai_answers[idx]
 
-            for ai_name, ai_label in [("gemini", "Gemini"), ("openai", "ChatGPT"), ("claude", "Claude")]:
-                if ai_name in ai_ans:
-                    story.append(Paragraph(f"<b>{ai_label}:</b>", styles['Normal']))
-                    story.append(Paragraph(ai_ans[ai_name], styles['Normal']))
+            for ai_name, ai_label, ai_icon in [
+                ("gemini", "Gemini", "⚫"),
+                ("openai", "ChatGPT", "🟢"),
+                ("claude", "Claude", "🟣")
+            ]:
+                if ai_name in ai_ans and ai_name in result:
+                    ai_result = result[ai_name]
+                    ai_score = ai_result.get('score', 0)
+                    ai_reason = ai_result.get('reason', 'N/A')
+                    ai_is_correct = ai_result.get('is_correct', False)
 
-                    if ai_name in result:
-                        ai_result = result[ai_name]
-                        status = "CORRETTA" if ai_result.get('is_correct') else "SBAGLIATA"
-                        story.append(Paragraph(f"Esito: {status} (Score: {ai_result.get('score', 0):.2f})", styles['Normal']))
-                        story.append(Paragraph(f"Motivazione: {ai_result.get('reason', 'N/A')}", styles['Normal']))
+                    # Determina colore
+                    if ai_score >= 0.75:
+                        bg_color = colors.HexColor('#E8F5E9')  # Verde chiaro
+                        border_color = colors.HexColor('#4CAF50')
+                        status_text = "✓ CORRETTA"
+                    elif ai_score >= 0.5:
+                        bg_color = colors.HexColor('#FFF3E0')  # Arancione chiaro
+                        border_color = colors.HexColor('#FF9800')
+                        status_text = "⚠ PARZIALE"
+                    else:
+                        bg_color = colors.HexColor('#FFEBEE')  # Rosso chiaro
+                        border_color = colors.HexColor('#F44336')
+                        status_text = "✗ SBAGLIATA"
+
+                    # Header AI
+                    story.append(Paragraph(f"<b>{ai_icon} {ai_label}</b> - Score: {ai_score:.2f}/1.00 - {status_text}", styles['Normal']))
+
+                    # Risposta AI
+                    ai_answer_text = ai_ans[ai_name][:500] + "..." if len(ai_ans[ai_name]) > 500 else ai_ans[ai_name]
+                    ai_data = [[ai_answer_text]]
+                    ai_table = Table(ai_data, colWidths=[6*inch])
+                    ai_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, -1), bg_color),
+                        ('BOX', (0, 0), (-1, -1), 2, border_color),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+                        ('TOPPADDING', (0, 0), (-1, -1), 8),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                    ]))
+                    story.append(ai_table)
+
+                    # Motivazione valutazione
+                    story.append(Paragraph(f"<i>Motivazione: {ai_reason}</i>", styles['Normal']))
+
+                    # Gap analysis se parziale o sbagliata
+                    if ai_score < 0.75:
+                        gap_text = f"<b>⚠ GAP IDENTIFICATO:</b> Differenza con ground truth: {(1 - ai_score) * 100:.0f}%"
+                        story.append(Paragraph(gap_text, styles['Normal']))
 
                     story.append(Spacer(1, 0.1*inch))
 
         story.append(Spacer(1, 0.2*inch))
 
-    # Footer
+        # Separatore tra domande
+        story.append(Paragraph("_" * 100, styles['Normal']))
+        story.append(Spacer(1, 0.2*inch))
+
+    # === FOOTER ===
     story.append(PageBreak())
+    story.append(Spacer(1, 1*inch))
     story.append(Paragraph("Report generato da Brand AI Integrity Tool", styles['Normal']))
-    story.append(Paragraph("Sviluppato dal Team Innovation di AvantGrade.com", styles['Normal']))
+    story.append(Paragraph("Sviluppato dal <b>Team Innovation di AvantGrade.com</b>", styles['Normal']))
+    story.append(Spacer(1, 0.2*inch))
+    story.append(Paragraph(f"Data generazione: {datetime.now().strftime('%d/%m/%Y - %H:%M:%S')}", styles['Normal']))
 
     # Build PDF
     doc.build(story)
     buffer.seek(0)
     return buffer
+
+
+def get_color_for_score(score: int) -> colors.Color:
+    """Restituisce il colore appropriato per uno score."""
+    if score >= 80:
+        return colors.HexColor('#4CAF50')  # Verde
+    elif score >= 60:
+        return colors.HexColor('#FF9800')  # Arancione
+    else:
+        return colors.HexColor('#F44336')  # Rosso
+
+
+def get_judgment(score: int) -> str:
+    """Restituisce il giudizio per uno score."""
+    if score >= 80:
+        return "ECCELLENTE"
+    elif score >= 60:
+        return "BUONO"
+    else:
+        return "DA MIGLIORARE"
 
 
 @st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta
