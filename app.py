@@ -1275,9 +1275,8 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 # Step 3: Calcola summary
                 if st.session_state.eval_results:
                     total = len(st.session_state.eval_results)
-                    correct = sum(1 for r in st.session_state.eval_results.values() if r.get('is_correct', False))
-                    integrity_score = round((correct / total) * 100)
 
+                    # Calcola score per ogni AI
                     ai_scores = {ai: [] for ai in ai_models}
                     for result in st.session_state.eval_results.values():
                         for ai_name in ai_models:
@@ -1288,6 +1287,15 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                         ai: round(sum(scores) / len(scores) * 100) if scores else 0
                         for ai, scores in ai_scores.items()
                     }
+
+                    # Score medio CORRETTO: media degli score delle 3 AI
+                    gemini_avg = ai_averages.get('gemini', 0)
+                    openai_avg = ai_averages.get('openai', 0)
+                    claude_avg = ai_averages.get('claude', 0)
+                    integrity_score = round((gemini_avg + openai_avg + claude_avg) / 3)
+
+                    # Conta risposte corrette (per statistiche)
+                    correct = sum(1 for r in st.session_state.eval_results.values() if r.get('is_correct', False))
 
                     st.session_state.summary = {
                         'total': total,
@@ -1344,7 +1352,7 @@ def render_step_3_results():
 
     st.markdown("---")
 
-    # Score principale con box colorato
+    # Score principale con box colorato (MEDIO delle 3 AI)
     score = summary['integrity_score']
     if score >= 80:
         color = "#4CAF50"  # Verde
@@ -1362,8 +1370,9 @@ def render_step_3_results():
     st.markdown(
         f"""
         <div style='background-color: {color}; padding: 30px; border-radius: 10px; text-align: center;'>
-            <h1 style='color: white; margin: 0; font-size: 4em;'>{emoji} {score}/100</h1>
-            <h2 style='color: white; margin: 10px 0 0 0;'>{judgment}</h2>
+            <h3 style='color: white; margin: 0; font-size: 1.2em; opacity: 0.9;'>Score Medio (3 AI)</h3>
+            <h1 style='color: white; margin: 10px 0; font-size: 4em;'>{emoji} {score}/100</h1>
+            <h2 style='color: white; margin: 0;'>{judgment}</h2>
         </div>
         """,
         unsafe_allow_html=True
@@ -1371,20 +1380,22 @@ def render_step_3_results():
 
     st.markdown("---")
 
-    # Score per AI
+    # Score per AI - Responsive (si impilano su schermi piccoli)
     st.markdown("### 📈 Performance per AI")
 
-    col1, col2, col3 = st.columns(3)
     ai_scores = summary.get('ai_scores', {})
+
+    # Usa CSS responsive per le card
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         gemini_score = ai_scores.get('gemini', 0)
         g_color = "#4CAF50" if gemini_score >= 80 else ("#FF9800" if gemini_score >= 60 else "#F44336")
         st.markdown(
             f"""
-            <div style='background-color: {g_color}; padding: 20px; border-radius: 10px; text-align: center;'>
-                <h3 style='color: white; margin: 0;'>⚫ Gemini</h3>
-                <h1 style='color: white; margin: 10px 0 0 0;'>{gemini_score}/100</h1>
+            <div style='background-color: {g_color}; padding: 20px; border-radius: 10px; text-align: center; min-height: 120px;'>
+                <h3 style='color: white; margin: 0; font-size: 1.1em;'>⚫ Gemini</h3>
+                <h1 style='color: white; margin: 10px 0 0 0; font-size: 2.5em;'>{gemini_score}/100</h1>
             </div>
             """,
             unsafe_allow_html=True
@@ -1395,9 +1406,9 @@ def render_step_3_results():
         o_color = "#4CAF50" if openai_score >= 80 else ("#FF9800" if openai_score >= 60 else "#F44336")
         st.markdown(
             f"""
-            <div style='background-color: {o_color}; padding: 20px; border-radius: 10px; text-align: center;'>
-                <h3 style='color: white; margin: 0;'>🟢 ChatGPT</h3>
-                <h1 style='color: white; margin: 10px 0 0 0;'>{openai_score}/100</h1>
+            <div style='background-color: {o_color}; padding: 20px; border-radius: 10px; text-align: center; min-height: 120px;'>
+                <h3 style='color: white; margin: 0; font-size: 1.1em;'>🟢 ChatGPT</h3>
+                <h1 style='color: white; margin: 10px 0 0 0; font-size: 2.5em;'>{openai_score}/100</h1>
             </div>
             """,
             unsafe_allow_html=True
@@ -1408,9 +1419,9 @@ def render_step_3_results():
         c_color = "#4CAF50" if claude_score >= 80 else ("#FF9800" if claude_score >= 60 else "#F44336")
         st.markdown(
             f"""
-            <div style='background-color: {c_color}; padding: 20px; border-radius: 10px; text-align: center;'>
-                <h3 style='color: white; margin: 0;'>🟣 Claude</h3>
-                <h1 style='color: white; margin: 10px 0 0 0;'>{claude_score}/100</h1>
+            <div style='background-color: {c_color}; padding: 20px; border-radius: 10px; text-align: center; min-height: 120px;'>
+                <h3 style='color: white; margin: 0; font-size: 1.1em;'>🟣 Claude</h3>
+                <h1 style='color: white; margin: 10px 0 0 0; font-size: 2.5em;'>{claude_score}/100</h1>
             </div>
             """,
             unsafe_allow_html=True
@@ -1479,38 +1490,43 @@ def render_step_3_results():
 
             st.markdown("---")
 
-            # Risposte AI in colonne
-            col1, col2, col3 = st.columns(3)
-
+            # Risposte AI - layout responsive (una sotto l'altra per leggibilità)
             if idx in st.session_state.ai_answers:
                 ai_ans = st.session_state.ai_answers[idx]
 
-                with col1:
-                    st.markdown("**⚫ Gemini:**")
-                    if "gemini" in ai_ans:
-                        st.info(ai_ans["gemini"])
-                        if "gemini" in result:
-                            g_res = result["gemini"]
-                            st.markdown(f"Score: {g_res.get('score', 0):.2f}")
-                            st.caption(g_res.get('reason', ''))
+                # Gemini
+                st.markdown("**⚫ Gemini:**")
+                if "gemini" in ai_ans:
+                    st.info(ai_ans["gemini"])
+                    if "gemini" in result:
+                        g_res = result["gemini"]
+                        st.markdown(f"✓ Score: {g_res.get('score', 0):.2f} - {g_res.get('reason', '')}")
+                else:
+                    st.warning("Non disponibile")
 
-                with col2:
-                    st.markdown("**🟢 ChatGPT:**")
-                    if "openai" in ai_ans:
-                        st.info(ai_ans["openai"])
-                        if "openai" in result:
-                            o_res = result["openai"]
-                            st.markdown(f"Score: {o_res.get('score', 0):.2f}")
-                            st.caption(o_res.get('reason', ''))
+                st.markdown("")  # Spacing
 
-                with col3:
-                    st.markdown("**🟣 Claude:**")
-                    if "claude" in ai_ans:
-                        st.info(ai_ans["claude"])
-                        if "claude" in result:
-                            c_res = result["claude"]
-                            st.markdown(f"Score: {c_res.get('score', 0):.2f}")
-                            st.caption(c_res.get('reason', ''))
+                # ChatGPT
+                st.markdown("**🟢 ChatGPT:**")
+                if "openai" in ai_ans:
+                    st.info(ai_ans["openai"])
+                    if "openai" in result:
+                        o_res = result["openai"]
+                        st.markdown(f"✓ Score: {o_res.get('score', 0):.2f} - {o_res.get('reason', '')}")
+                else:
+                    st.warning("Non disponibile")
+
+                st.markdown("")  # Spacing
+
+                # Claude
+                st.markdown("**🟣 Claude:**")
+                if "claude" in ai_ans:
+                    st.info(ai_ans["claude"])
+                    if "claude" in result:
+                        c_res = result["claude"]
+                        st.markdown(f"✓ Score: {c_res.get('score', 0):.2f} - {c_res.get('reason', '')}")
+                else:
+                    st.warning("Non disponibile")
 
 
 def main():
