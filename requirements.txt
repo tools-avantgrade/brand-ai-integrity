@@ -10,8 +10,11 @@ openai>=1.0.0
 # Anthropic SDK (for Claude)
 anthropic>=0.18.0
 
-# Web search - Brave Search API (usata da ChatGPT e altre AI, completamente gratuita)
+# Web search capabilities
 requests>=2.31.0
+
+# PDF generation
+reportlab>=4.0.0
 
 # Additional utilities
 python-dotenv>=1.0.0
