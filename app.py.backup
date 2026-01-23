@@ -1108,429 +1108,31 @@ def render_section_d():
                     st.warning("Non disponibile")
 
 
-def render_step_1_brand():
-    """Step 1: Inserimento brand name."""
-    st.subheader("Step 1: Inserisci il nome del tuo Brand")
-
-    brand_name = st.text_input(
-        "Nome del Brand",
-        value=st.session_state.brand_name,
-        placeholder="es. Nike, Apple, AvantGrade...",
-        help="Inserisci il nome del brand da analizzare",
-        key="brand_input"
-    )
-
-    if brand_name and brand_name != st.session_state.brand_name:
-        st.session_state.brand_name = brand_name
-        # Reset quando cambia brand
-        st.session_state.ai_answers = {}
-        st.session_state.user_answers = {}
-        st.session_state.eval_results = {}
-        st.session_state.summary = None
-
-    if brand_name:
-        st.success(f"✓ Brand selezionato: **{brand_name}**")
-
-        if st.button("Continua →", type="primary"):
-            st.session_state.current_step = 2
-            st.rerun()
-    else:
-        st.info("Inserisci il nome del brand per continuare")
-
-
-def render_step_2_questions_answers(gemini_model, openai_client, anthropic_client, evaluator_model):
-    """Step 2: Domande, risposte utente, generazione AI e calcolo (tutto in uno)."""
-    brand_name = st.session_state.brand_name
-
-    st.subheader(f"Step 2: Rispondi alle domande su {brand_name}")
-    st.markdown("Fornisci le risposte corrette secondo il tuo brand. Le AI cercheranno queste informazioni sul web.")
-
-    questions = get_all_questions()
-
-    # Sezione domande e risposte
-    all_valid = True
-
-    for idx, q in enumerate(DEFAULT_QUESTIONS):
-        question = q.replace("{BRAND_NAME}", brand_name)
-
-        with st.container():
-            st.markdown(f"**Domanda {idx + 1}**")
-            st.text_area(
-                "",
-                value=question,
-                key=f"default_question_{idx}",
-                height=60,
-                disabled=True,
-                label_visibility="collapsed"
-            )
-
-            user_answer = st.text_area(
-                f"La tua risposta (min {MIN_ANSWER_LENGTH} caratteri)",
-                value=st.session_state.user_answers.get(idx, ""),
-                key=f"user_answer_{idx}",
-                height=100,
-                placeholder="Inserisci la risposta corretta secondo il tuo brand..."
-            )
-
-            st.session_state.user_answers[idx] = user_answer
-
-            if len(user_answer.strip()) < MIN_ANSWER_LENGTH:
-                st.warning(f"⚠️ Risposta troppo corta (min {MIN_ANSWER_LENGTH} caratteri)")
-                all_valid = False
-
-            st.markdown("---")
-
-    # Check if all answers are valid
-    if all_valid:
-        st.success("✓ Tutte le risposte sono complete!")
-
-        # Bottone per generare e calcolare tutto insieme
-        if st.button("🚀 Analizza con le AI e Calcola Brand Integrity", type="primary"):
-            with st.spinner("Generando risposte dalle AI e calcolando il Brand Integrity Score..."):
-                # Step 1: Genera risposte AI
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-
-                st.session_state.ai_answers = {}
-                errors = []
-
-                total_steps = len(questions) * 3
-                current_step_count = 0
-
-                for idx, question in enumerate(questions):
-                    st.session_state.ai_answers[idx] = {}
-
-                    # Gemini
-                    status_text.text(f"⚫ Gemini: domanda {idx + 1}/{len(questions)}...")
-                    progress_bar.progress(current_step_count / total_steps / 2)  # Prima metà per AI generation
-
-                    gemini_answer, gemini_error = generate_gemini_answer(gemini_model, brand_name, question)
-                    if gemini_error:
-                        errors.append(f"Gemini Q{idx + 1}: {gemini_error}")
-                    else:
-                        st.session_state.ai_answers[idx]["gemini"] = gemini_answer
-                    current_step_count += 1
-
-                    # ChatGPT
-                    status_text.text(f"🟢 ChatGPT: domanda {idx + 1}/{len(questions)}...")
-                    progress_bar.progress(current_step_count / total_steps / 2)
-
-                    openai_answer, openai_error = generate_openai_answer(openai_client, brand_name, question)
-                    if openai_error:
-                        errors.append(f"ChatGPT Q{idx + 1}: {openai_error}")
-                    else:
-                        st.session_state.ai_answers[idx]["openai"] = openai_answer
-                    current_step_count += 1
-
-                    # Claude
-                    status_text.text(f"🟣 Claude: domanda {idx + 1}/{len(questions)}...")
-                    progress_bar.progress(current_step_count / total_steps / 2)
-
-                    claude_answer, claude_error = generate_claude_answer(anthropic_client, brand_name, question)
-                    if claude_error:
-                        errors.append(f"Claude Q{idx + 1}: {claude_error}")
-                    else:
-                        st.session_state.ai_answers[idx]["claude"] = claude_answer
-                    current_step_count += 1
-
-                # Step 2: Valuta risposte
-                status_text.text("Valutando le risposte...")
-                st.session_state.eval_results = {}
-
-                ai_models = ["gemini", "openai", "claude"]
-                total_evals = len(st.session_state.ai_answers) * len(ai_models)
-                current_eval = 0
-
-                for idx in sorted(st.session_state.ai_answers.keys()):
-                    question = questions[idx].replace("{BRAND_NAME}", brand_name)
-                    ai_answers = st.session_state.ai_answers[idx]
-                    user_answer = st.session_state.user_answers[idx]
-
-                    st.session_state.eval_results[idx] = {}
-                    scores = []
-
-                    for ai_name in ai_models:
-                        if ai_name in ai_answers:
-                            progress_bar.progress(0.5 + (current_eval / total_evals / 2))
-
-                            result, error = evaluate_answer(evaluator_model, question, ai_answers[ai_name], user_answer)
-
-                            if error:
-                                errors.append(f"Eval Q{idx + 1} ({ai_name}): {error}")
-                            else:
-                                st.session_state.eval_results[idx][ai_name] = result
-                                scores.append(result['score'])
-
-                            current_eval += 1
-
-                    # Average score
-                    if scores:
-                        avg_score = sum(scores) / len(scores)
-                        st.session_state.eval_results[idx]['average_score'] = avg_score
-                        st.session_state.eval_results[idx]['is_correct'] = avg_score >= MATCH_THRESHOLD
-
-                # Step 3: Calcola summary
-                if st.session_state.eval_results:
-                    total = len(st.session_state.eval_results)
-                    correct = sum(1 for r in st.session_state.eval_results.values() if r.get('is_correct', False))
-                    integrity_score = round((correct / total) * 100)
-
-                    ai_scores = {ai: [] for ai in ai_models}
-                    for result in st.session_state.eval_results.values():
-                        for ai_name in ai_models:
-                            if ai_name in result and 'score' in result[ai_name]:
-                                ai_scores[ai_name].append(result[ai_name]['score'])
-
-                    ai_averages = {
-                        ai: round(sum(scores) / len(scores) * 100) if scores else 0
-                        for ai, scores in ai_scores.items()
-                    }
-
-                    st.session_state.summary = {
-                        'total': total,
-                        'correct': correct,
-                        'incorrect': total - correct,
-                        'integrity_score': integrity_score,
-                        'ai_scores': ai_averages
-                    }
-
-                progress_bar.progress(1.0)
-                status_text.empty()
-                progress_bar.empty()
-
-                if errors:
-                    st.warning("⚠️ Alcuni errori durante l'elaborazione:")
-                    for err in errors[:5]:  # Mostra solo i primi 5
-                        st.text(err)
-
-                st.success("✅ Analisi completata!")
-                time.sleep(1)
-
-                # Passa allo step 3
-                st.session_state.current_step = 3
-                st.rerun()
-    else:
-        st.info("Completa tutte le risposte per procedere con l'analisi")
-
-
-def render_step_3_results():
-    """Step 3: Visualizzazione risultati con PDF export."""
-    if not st.session_state.summary:
-        st.error("Nessun risultato disponibile")
-        if st.button("← Torna indietro"):
-            st.session_state.current_step = 2
-            st.rerun()
-        return
-
-    brand_name = st.session_state.brand_name
-    summary = st.session_state.summary
-
-    st.subheader(f"📊 Risultati: Brand AI Integrity per {brand_name}")
-
-    # Score principale con box colorato
-    score = summary['integrity_score']
-    if score >= 80:
-        color = "#4CAF50"  # Verde
-        emoji = "🟢"
-        judgment = "ECCELLENTE"
-    elif score >= 60:
-        color = "#FF9800"  # Arancione
-        emoji = "🟡"
-        judgment = "BUONO"
-    else:
-        color = "#F44336"  # Rosso
-        emoji = "🔴"
-        judgment = "DA MIGLIORARE"
-
-    st.markdown(
-        f"""
-        <div style='background-color: {color}; padding: 30px; border-radius: 10px; text-align: center;'>
-            <h1 style='color: white; margin: 0; font-size: 4em;'>{emoji} {score}/100</h1>
-            <h2 style='color: white; margin: 10px 0 0 0;'>{judgment}</h2>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown("---")
-
-    # Score per AI
-    st.markdown("### 📈 Performance per AI")
-
-    col1, col2, col3 = st.columns(3)
-    ai_scores = summary.get('ai_scores', {})
-
-    with col1:
-        gemini_score = ai_scores.get('gemini', 0)
-        g_color = "#4CAF50" if gemini_score >= 80 else ("#FF9800" if gemini_score >= 60 else "#F44336")
-        st.markdown(
-            f"""
-            <div style='background-color: {g_color}; padding: 20px; border-radius: 10px; text-align: center;'>
-                <h3 style='color: white; margin: 0;'>⚫ Gemini</h3>
-                <h1 style='color: white; margin: 10px 0 0 0;'>{gemini_score}/100</h1>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with col2:
-        openai_score = ai_scores.get('openai', 0)
-        o_color = "#4CAF50" if openai_score >= 80 else ("#FF9800" if openai_score >= 60 else "#F44336")
-        st.markdown(
-            f"""
-            <div style='background-color: {o_color}; padding: 20px; border-radius: 10px; text-align: center;'>
-                <h3 style='color: white; margin: 0;'>🟢 ChatGPT</h3>
-                <h1 style='color: white; margin: 10px 0 0 0;'>{openai_score}/100</h1>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with col3:
-        claude_score = ai_scores.get('claude', 0)
-        c_color = "#4CAF50" if claude_score >= 80 else ("#FF9800" if claude_score >= 60 else "#F44336")
-        st.markdown(
-            f"""
-            <div style='background-color: {c_color}; padding: 20px; border-radius: 10px; text-align: center;'>
-                <h3 style='color: white; margin: 0;'>🟣 Claude</h3>
-                <h1 style='color: white; margin: 10px 0 0 0;'>{claude_score}/100</h1>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    st.markdown("---")
-
-    # Stats
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("📝 Domande totali", summary['total'])
-    with col2:
-        st.metric("✅ Risposte corrette (media)", summary['correct'])
-    with col3:
-        st.metric("❌ Risposte sbagliate (media)", summary['incorrect'])
-
-    st.markdown("---")
-
-    # Export PDF
-    st.markdown("### 📥 Scarica il Report")
-
-    try:
-        questions = get_all_questions()
-        pdf_buffer = generate_pdf_report(
-            brand_name,
-            summary,
-            st.session_state.eval_results,
-            questions,
-            st.session_state.user_answers,
-            st.session_state.ai_answers
-        )
-
-        st.download_button(
-            label="📄 Scarica Report PDF",
-            data=pdf_buffer,
-            file_name=f"brand_ai_integrity_{brand_name.lower().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
-            mime="application/pdf",
-            type="primary"
-        )
-    except Exception as e:
-        st.error(f"Errore nella generazione del PDF: {str(e)}")
-
-    st.markdown("---")
-
-    # Dettagli per domanda (expander)
-    st.markdown("### 🔍 Dettagli per Domanda")
-
-    questions = get_all_questions()
-
-    for idx in sorted(st.session_state.eval_results.keys()):
-        result = st.session_state.eval_results[idx]
-        question = questions[idx].replace("{BRAND_NAME}", brand_name)
-
-        avg_score = result.get('average_score', 0)
-        status = "✅ CORRETTA" if result.get('is_correct', False) else "❌ SBAGLIATA"
-
-        with st.expander(f"Domanda {idx + 1}: {question[:50]}... - {status}"):
-            st.markdown(f"**Domanda:** {question}")
-            st.markdown(f"**Score medio:** {avg_score:.2f} / 1.00")
-
-            st.markdown("---")
-
-            # Ground truth
-            st.markdown("**✅ La tua risposta (Ground Truth):**")
-            st.success(st.session_state.user_answers[idx])
-
-            st.markdown("---")
-
-            # Risposte AI in colonne
-            col1, col2, col3 = st.columns(3)
-
-            if idx in st.session_state.ai_answers:
-                ai_ans = st.session_state.ai_answers[idx]
-
-                with col1:
-                    st.markdown("**⚫ Gemini:**")
-                    if "gemini" in ai_ans:
-                        st.info(ai_ans["gemini"])
-                        if "gemini" in result:
-                            g_res = result["gemini"]
-                            st.markdown(f"Score: {g_res.get('score', 0):.2f}")
-                            st.caption(g_res.get('reason', ''))
-
-                with col2:
-                    st.markdown("**🟢 ChatGPT:**")
-                    if "openai" in ai_ans:
-                        st.info(ai_ans["openai"])
-                        if "openai" in result:
-                            o_res = result["openai"]
-                            st.markdown(f"Score: {o_res.get('score', 0):.2f}")
-                            st.caption(o_res.get('reason', ''))
-
-                with col3:
-                    st.markdown("**🟣 Claude:**")
-                    if "claude" in ai_ans:
-                        st.info(ai_ans["claude"])
-                        if "claude" in result:
-                            c_res = result["claude"]
-                            st.markdown(f"Score: {c_res.get('score', 0):.2f}")
-                            st.caption(c_res.get('reason', ''))
-
-
 def main():
-    """Main app con flusso step-by-step."""
+    """Main app."""
     st.set_page_config(
         page_title="Brand AI Integrity Tool",
         page_icon="🎯",
         layout="wide"
     )
 
+    st.title("Brand AI Integrity Tool")
+    st.markdown("Misura la Brand Integrity confrontando risposte AI (Gemini, ChatGPT, Claude) con risposte ground truth del brand.")
+    st.success("🌐 **Web Search Reale con Brave Search API** - ChatGPT e Claude accedono al web ESATTAMENTE come nelle loro app!")
+
     # Init session state
     init_session_state()
-
-    # Header
-    st.title("🎯 Brand AI Integrity Tool")
-    st.markdown("**Misura quanto le AI rappresentano correttamente il tuo brand**")
-    st.markdown("---")
-
-    # AI Logos e modelli
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("### ⚫ Gemini")
-        st.caption(f"Modello: {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}")
-    with col2:
-        st.markdown("### 🟢 ChatGPT")
-        st.caption(f"Modello: {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}")
-    with col3:
-        st.markdown("### 🟣 Claude")
-        st.caption(f"Modello: {st.secrets.get('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929')}")
-
-    st.markdown("---")
 
     # Check secrets
     secrets_ok, error_msg = check_secrets()
     if not secrets_ok:
-        st.error(f"⚠️ Errore configurazione: {error_msg}")
-        st.info("Configura le chiavi API in secrets.toml: GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, BRAVE_API_KEY")
+        st.error(f"Errore configurazione: {error_msg}")
+        st.info("""Configura il file .streamlit/secrets.toml con le chiavi API:
+        - GEMINI_API_KEY
+        - OPENAI_API_KEY
+        - ANTHROPIC_API_KEY
+        - BRAVE_API_KEY (GRATIS su brave.com/search/api - nessun limite!)
+        """)
         st.stop()
 
     # Configure AI models
@@ -1539,39 +1141,68 @@ def main():
         st.error(error_msg)
         st.stop()
 
-    # Progress indicator
-    current_step = st.session_state.current_step
-    steps = ["1️⃣ Brand", "2️⃣ Domande & Risposte", "3️⃣ Risultati"]
-    st.progress((current_step - 1) / 2)
-    st.markdown(f"**Passo {current_step}/3:** {steps[current_step - 1]}")
-    st.markdown("---")
+    # Sidebar info
+    with st.sidebar:
+        st.header("Informazioni")
+        st.markdown(f"""
+        **🤖 Gemini:** {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}
+        🌐 *Google Web Access*
 
-    # STEP 1: Brand Name
-    if current_step == 1:
-        render_step_1_brand()
+        **💬 ChatGPT:** {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}
+        🔍 *Brave Search (come app reale)*
 
-    # STEP 2: Domande e Risposte
-    elif current_step == 2:
-        render_step_2_questions_answers(gemini_model, openai_client, anthropic_client, evaluator_model)
+        **🧠 Claude:** {st.secrets.get('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929')}
+        🔍 *Brave Search (come app reale)*
 
-    # STEP 3: Risultati
-    elif current_step == 3:
-        render_step_3_results()
+        **Evaluator:** {st.secrets.get('EVALUATOR_MODEL', 'gemini-3-flash-preview')}
+
+        **Soglia match:** {MATCH_THRESHOLD}
+
+        **Chiamate API (sessione):** {st.session_state.api_calls_count}
+
+        ---
+
+        🔍 **Brave Search API**: Ricerca web REALE usata da ChatGPT e altre AI. GRATIS, no limiti!
+        Ottieni la tua chiave: https://brave.com/search/api
+        """)
+
+        if st.button("Reset sessione"):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+
+    # Sezioni dell'app
+    st.divider()
+
+    # Sezione A: Setup + Risposte (unificata)
+    user_answers_ready = render_section_a()
+
+    st.divider()
+
+    # Sezione B: Generazione risposte AI (3 AI)
+    if user_answers_ready:
+        ai_answers_ready = render_section_b(gemini_model, openai_client, anthropic_client)
+    else:
+        st.info("Completa le risposte nella Sezione A per procedere")
+        ai_answers_ready = False
+
+    st.divider()
+
+    # Sezione C: Calcolo Brand Integrity (3 AI)
+    if ai_answers_ready:
+        calculation_done = render_section_c(evaluator_model)
+    else:
+        st.info("Completa le sezioni precedenti per calcolare il Brand Integrity Score")
+        calculation_done = False
+
+    st.divider()
+
+    # Sezione D: Risultati (3 AI)
+    render_section_d()
 
     # Footer
-    st.markdown("---")
-    st.markdown(
-        "<div style='text-align: center; color: #666; font-size: 0.9em;'>"
-        "Sviluppato dal <b>Team Innovation di AvantGrade.com</b>"
-        "</div>",
-        unsafe_allow_html=True
-    )
-
-    # Reset button (piccolo, in basso)
-    if st.button("🔄 Ricomincia", help="Resetta l'analisi e ricomincia da capo"):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.rerun()
+    st.divider()
+    st.caption("Brand AI Integrity Tool - MVP v1.0")
 
 
 if __name__ == "__main__":
