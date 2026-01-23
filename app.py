@@ -1174,8 +1174,11 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
             st.session_state.user_answers[idx] = user_answer
 
-            if len(user_answer.strip()) < MIN_ANSWER_LENGTH:
+            # Mostra warning solo se l'utente ha iniziato a scrivere ma non ha raggiunto il minimo
+            if len(user_answer.strip()) > 0 and len(user_answer.strip()) < MIN_ANSWER_LENGTH:
                 st.warning(f"⚠️ Risposta troppo corta (min {MIN_ANSWER_LENGTH} caratteri)")
+                all_valid = False
+            elif len(user_answer.strip()) == 0:
                 all_valid = False
 
             st.markdown("---")
@@ -1326,6 +1329,20 @@ def render_step_3_results():
     summary = st.session_state.summary
 
     st.subheader(f"📊 Risultati: Brand AI Integrity per {brand_name}")
+
+    # AI Logos e modelli (mostrati solo qui nei risultati)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("**⚫ Gemini**")
+        st.caption(f"Modello: {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}")
+    with col2:
+        st.markdown("**🟢 ChatGPT**")
+        st.caption(f"Modello: {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}")
+    with col3:
+        st.markdown("**🟣 Claude**")
+        st.caption(f"Modello: {st.secrets.get('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929')}")
+
+    st.markdown("---")
 
     # Score principale con box colorato
     score = summary['integrity_score']
@@ -1501,7 +1518,7 @@ def main():
     st.set_page_config(
         page_title="Brand AI Integrity Tool",
         page_icon="🎯",
-        layout="wide"
+        layout="centered"  # Cambiato da "wide" a "centered"
     )
 
     # Init session state
@@ -1510,20 +1527,6 @@ def main():
     # Header
     st.title("🎯 Brand AI Integrity Tool")
     st.markdown("**Misura quanto le AI rappresentano correttamente il tuo brand**")
-    st.markdown("---")
-
-    # AI Logos e modelli
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("### ⚫ Gemini")
-        st.caption(f"Modello: {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}")
-    with col2:
-        st.markdown("### 🟢 ChatGPT")
-        st.caption(f"Modello: {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}")
-    with col3:
-        st.markdown("### 🟣 Claude")
-        st.caption(f"Modello: {st.secrets.get('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929')}")
-
     st.markdown("---")
 
     # Check secrets
@@ -1539,9 +1542,9 @@ def main():
         st.error(error_msg)
         st.stop()
 
-    # Progress indicator
+    # Progress indicator (senza emoji nei numeri)
     current_step = st.session_state.current_step
-    steps = ["1️⃣ Brand", "2️⃣ Domande & Risposte", "3️⃣ Risultati"]
+    steps = ["Brand", "Domande & Risposte", "Risultati"]
     st.progress((current_step - 1) / 2)
     st.markdown(f"**Passo {current_step}/3:** {steps[current_step - 1]}")
     st.markdown("---")
