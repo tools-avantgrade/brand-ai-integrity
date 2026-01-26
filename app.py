@@ -16,6 +16,7 @@ from typing import Dict, List, Optional, Tuple
 from io import BytesIO
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.enums import TA_LEFT
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -291,17 +292,20 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
         fontName='Helvetica-Bold'
     )
 
-    # Stile per testo nelle box colorate con word wrap
+    # Stile per testo nelle box colorate con word wrap corretto
     box_text_style = ParagraphStyle(
         'BoxText',
         parent=styles['Normal'],
         fontSize=10,
         leading=14,
         wordWrap='LTR',
+        splitLongWords=True,
+        breakLongWords=True,
         leftIndent=0,
         rightIndent=0,
         spaceBefore=0,
-        spaceAfter=0
+        spaceAfter=0,
+        alignment=TA_LEFT
     )
 
     # Build PDF content
@@ -424,17 +428,17 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
         story.append(Paragraph("<b>✓ RISPOSTA GROUND TRUTH (Brand):</b>", styles['Normal']))
         story.append(Spacer(1, 0.1*inch))
 
-        # Usa Paragraph per word wrap automatico con larghezza fissa
+        # Usa Paragraph per word wrap automatico con larghezza ottimizzata
         gt_text = Paragraph(user_answers[idx], box_text_style)
         ground_truth_data = [[gt_text]]
-        gt_table = Table(ground_truth_data, colWidths=[5.5*inch])
+        gt_table = Table(ground_truth_data, colWidths=[5.0*inch])
         gt_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#E8F5E9')),
             ('BOX', (0, 0), (-1, -1), 2, colors.HexColor('#4CAF50')),
-            ('LEFTPADDING', (0, 0), (-1, -1), 15),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 15),
-            ('TOPPADDING', (0, 0), (-1, -1), 15),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, -1), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ]))
         story.append(gt_table)
@@ -476,18 +480,17 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
                     story.append(Paragraph(f"<b>{ai_icon} {ai_label}</b> - Score: {ai_score:.2f}/1.00 - {status_text}", styles['Normal']))
                     story.append(Spacer(1, 0.08*inch))
 
-                    # Risposta AI - usa Paragraph per word wrap automatico con larghezza fissa
-                    ai_answer_text = ai_ans[ai_name][:500] + "..." if len(ai_ans[ai_name]) > 500 else ai_ans[ai_name]
-                    ai_answer_para = Paragraph(ai_answer_text, box_text_style)
+                    # Risposta AI - usa Paragraph per word wrap automatico - NON troncare
+                    ai_answer_para = Paragraph(ai_ans[ai_name], box_text_style)
                     ai_data = [[ai_answer_para]]
-                    ai_table = Table(ai_data, colWidths=[5.5*inch])
+                    ai_table = Table(ai_data, colWidths=[5.0*inch])
                     ai_table.setStyle(TableStyle([
                         ('BACKGROUND', (0, 0), (-1, -1), bg_color),
                         ('BOX', (0, 0), (-1, -1), 2, border_color),
-                        ('LEFTPADDING', (0, 0), (-1, -1), 15),
-                        ('RIGHTPADDING', (0, 0), (-1, -1), 15),
-                        ('TOPPADDING', (0, 0), (-1, -1), 15),
-                        ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+                        ('TOPPADDING', (0, 0), (-1, -1), 12),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
                         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                     ]))
                     story.append(ai_table)
