@@ -291,6 +291,19 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
         fontName='Helvetica-Bold'
     )
 
+    # Stile per testo nelle box colorate con word wrap
+    box_text_style = ParagraphStyle(
+        'BoxText',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=14,
+        wordWrap='LTR',
+        leftIndent=0,
+        rightIndent=0,
+        spaceBefore=0,
+        spaceAfter=0
+    )
+
     # Build PDF content
     story = []
 
@@ -411,10 +424,10 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
         story.append(Paragraph("<b>✓ RISPOSTA GROUND TRUTH (Brand):</b>", styles['Normal']))
         story.append(Spacer(1, 0.1*inch))
 
-        # Usa Paragraph per word wrap automatico
-        gt_text = Paragraph(user_answers[idx], styles['Normal'])
+        # Usa Paragraph per word wrap automatico con larghezza fissa
+        gt_text = Paragraph(user_answers[idx], box_text_style)
         ground_truth_data = [[gt_text]]
-        gt_table = Table(ground_truth_data, colWidths=[6*inch])
+        gt_table = Table(ground_truth_data, colWidths=[5.5*inch])
         gt_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#E8F5E9')),
             ('BOX', (0, 0), (-1, -1), 2, colors.HexColor('#4CAF50')),
@@ -463,11 +476,11 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
                     story.append(Paragraph(f"<b>{ai_icon} {ai_label}</b> - Score: {ai_score:.2f}/1.00 - {status_text}", styles['Normal']))
                     story.append(Spacer(1, 0.08*inch))
 
-                    # Risposta AI - usa Paragraph per word wrap automatico
+                    # Risposta AI - usa Paragraph per word wrap automatico con larghezza fissa
                     ai_answer_text = ai_ans[ai_name][:500] + "..." if len(ai_ans[ai_name]) > 500 else ai_ans[ai_name]
-                    ai_answer_para = Paragraph(ai_answer_text, styles['Normal'])
+                    ai_answer_para = Paragraph(ai_answer_text, box_text_style)
                     ai_data = [[ai_answer_para]]
-                    ai_table = Table(ai_data, colWidths=[6*inch])
+                    ai_table = Table(ai_data, colWidths=[5.5*inch])
                     ai_table.setStyle(TableStyle([
                         ('BACKGROUND', (0, 0), (-1, -1), bg_color),
                         ('BOX', (0, 0), (-1, -1), 2, border_color),
