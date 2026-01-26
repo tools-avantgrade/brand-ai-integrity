@@ -409,18 +409,23 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
 
         # === GROUND TRUTH ===
         story.append(Paragraph("<b>✓ RISPOSTA GROUND TRUTH (Brand):</b>", styles['Normal']))
-        ground_truth_data = [[user_answers[idx]]]
+        story.append(Spacer(1, 0.1*inch))
+
+        # Usa Paragraph per word wrap automatico
+        gt_text = Paragraph(user_answers[idx], styles['Normal'])
+        ground_truth_data = [[gt_text]]
         gt_table = Table(ground_truth_data, colWidths=[6*inch])
         gt_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#E8F5E9')),
             ('BOX', (0, 0), (-1, -1), 2, colors.HexColor('#4CAF50')),
-            ('LEFTPADDING', (0, 0), (-1, -1), 10),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-            ('TOPPADDING', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ('LEFTPADDING', (0, 0), (-1, -1), 15),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 15),
+            ('TOPPADDING', (0, 0), (-1, -1), 15),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ]))
         story.append(gt_table)
-        story.append(Spacer(1, 0.15*inch))
+        story.append(Spacer(1, 0.2*inch))
 
         # === RISPOSTE AI ===
         story.append(Paragraph("<b>RISPOSTE DELLE AI:</b>", styles['Normal']))
@@ -456,20 +461,24 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
 
                     # Header AI
                     story.append(Paragraph(f"<b>{ai_icon} {ai_label}</b> - Score: {ai_score:.2f}/1.00 - {status_text}", styles['Normal']))
+                    story.append(Spacer(1, 0.08*inch))
 
-                    # Risposta AI
+                    # Risposta AI - usa Paragraph per word wrap automatico
                     ai_answer_text = ai_ans[ai_name][:500] + "..." if len(ai_ans[ai_name]) > 500 else ai_ans[ai_name]
-                    ai_data = [[ai_answer_text]]
+                    ai_answer_para = Paragraph(ai_answer_text, styles['Normal'])
+                    ai_data = [[ai_answer_para]]
                     ai_table = Table(ai_data, colWidths=[6*inch])
                     ai_table.setStyle(TableStyle([
                         ('BACKGROUND', (0, 0), (-1, -1), bg_color),
                         ('BOX', (0, 0), (-1, -1), 2, border_color),
-                        ('LEFTPADDING', (0, 0), (-1, -1), 10),
-                        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-                        ('TOPPADDING', (0, 0), (-1, -1), 8),
-                        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 15),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 15),
+                        ('TOPPADDING', (0, 0), (-1, -1), 15),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
+                        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                     ]))
                     story.append(ai_table)
+                    story.append(Spacer(1, 0.08*inch))
 
                     # Motivazione valutazione
                     story.append(Paragraph(f"<i>Motivazione: {ai_reason}</i>", styles['Normal']))
@@ -479,13 +488,13 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
                         gap_text = f"<b>⚠ GAP IDENTIFICATO:</b> Differenza con ground truth: {(1 - ai_score) * 100:.0f}%"
                         story.append(Paragraph(gap_text, styles['Normal']))
 
-                    story.append(Spacer(1, 0.1*inch))
+                    story.append(Spacer(1, 0.15*inch))
 
-        story.append(Spacer(1, 0.2*inch))
+        story.append(Spacer(1, 0.25*inch))
 
         # Separatore tra domande
         story.append(Paragraph("_" * 100, styles['Normal']))
-        story.append(Spacer(1, 0.2*inch))
+        story.append(Spacer(1, 0.3*inch))
 
     # === FOOTER ===
     story.append(PageBreak())
