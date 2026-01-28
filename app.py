@@ -28,8 +28,8 @@ MATCH_THRESHOLD = 0.75
 DEFAULT_QUESTIONS = [
     "Qual è la mission del brand {BRAND_NAME}?",
     "Quali sono i principali prodotti/servizi offerti da {BRAND_NAME}?",
-    "Qual è la proposta di valore distintiva di {BRAND_NAME}?",
-    "Quali sono 3 punti di forza verificabili di {BRAND_NAME}?",
+    "Quali sono gli elementi identitari che differenziano il brand {BRAND_NAME} dalla concorrenza? (unique selling proposition, punti di forza riconosciuti, expertise specifiche, storia distintiva)",
+    "Quali sono i contatti e i canali ufficiali del brand {BRAND_NAME}? (sito web principale, sedi operative, numeri di telefono, email istituzionali, profili social verificati)",
     "Qual è il pubblico target principale di {BRAND_NAME}?"
 ]
 MIN_QUESTIONS = 3
@@ -60,8 +60,10 @@ def init_session_state():
 
 
 def get_all_questions():
-    """Restituisce tutte le domande (predefinite + personalizzate)."""
-    return DEFAULT_QUESTIONS + st.session_state.custom_questions
+    """Restituisce tutte le domande (modificate dall'utente o default + personalizzate)."""
+    # Usa le domande modificate se esistono, altrimenti usa DEFAULT_QUESTIONS
+    base_questions = st.session_state.get('editable_questions', DEFAULT_QUESTIONS)
+    return base_questions + st.session_state.custom_questions
 
 
 def check_secrets() -> Tuple[bool, Optional[str]]:
@@ -516,6 +518,40 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
     story.append(Paragraph("Sviluppato dal <b>Team Innovation di AvantGrade.com</b>", styles['Normal']))
     story.append(Spacer(1, 0.2*inch))
     story.append(Paragraph(f"Data generazione: {datetime.now().strftime('%d/%m/%Y - %H:%M:%S')}", styles['Normal']))
+
+    # Call to Action - Contatta AvantGrade
+    story.append(Spacer(1, 0.5*inch))
+
+    # Stile per il bottone CTA
+    cta_style = ParagraphStyle(
+        'CTA',
+        parent=styles['Normal'],
+        fontSize=12,
+        textColor=colors.white,
+        alignment=1,  # Center
+        fontName='Helvetica-Bold'
+    )
+
+    cta_text = '<link href="mailto:info@avantgrade.com" color="white">📧 Vuoi migliorare la tua Brand AI Integrity? Contatta AvantGrade</link>'
+    cta_para = Paragraph(cta_text, cta_style)
+
+    # Crea una table per il bottone arancione
+    cta_data = [[cta_para]]
+    cta_table = Table(cta_data, colWidths=[5*inch])
+    cta_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#FF9800')),  # Arancione
+        ('BOX', (0, 0), (-1, -1), 2, colors.HexColor('#F57C00')),  # Bordo arancione scuro
+        ('LEFTPADDING', (0, 0), (-1, -1), 20),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 20),
+        ('TOPPADDING', (0, 0), (-1, -1), 15),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+    ]))
+
+    story.append(cta_table)
+    story.append(Spacer(1, 0.2*inch))
+    story.append(Paragraph('<i>Clicca sul bottone per inviarci una email a info@avantgrade.com</i>', styles['Normal']))
 
     # Build PDF
     doc.build(story)
@@ -1313,6 +1349,38 @@ def render_step_1_brand():
         st.session_state.eval_results = {}
         st.session_state.summary = None
 
+    # Sezione per modificare le domande
+    with st.expander("✏️ Modifica domande di analisi", expanded=False):
+        st.caption("Puoi personalizzare le domande che verranno poste alle AI")
+
+        # Inizializza le domande modificabili in session state se non esistono
+        if 'editable_questions' not in st.session_state:
+            st.session_state.editable_questions = DEFAULT_QUESTIONS.copy()
+
+        modified = False
+        for idx, default_q in enumerate(DEFAULT_QUESTIONS):
+            new_q = st.text_area(
+                f"Domanda {idx + 1}",
+                value=st.session_state.editable_questions[idx],
+                key=f"edit_q_{idx}",
+                height=80
+            )
+            if new_q != st.session_state.editable_questions[idx]:
+                st.session_state.editable_questions[idx] = new_q
+                modified = True
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("💾 Salva modifiche", disabled=not modified):
+                # Le modifiche sono già salvate in session_state
+                st.success("✓ Domande aggiornate!")
+                st.rerun()
+        with col2:
+            if st.button("🔄 Ripristina default"):
+                st.session_state.editable_questions = DEFAULT_QUESTIONS.copy()
+                st.success("✓ Domande ripristinate!")
+                st.rerun()
+
     if brand_name:
         st.success(f"✓ Brand selezionato: **{brand_name}**")
 
@@ -1332,10 +1400,13 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
     questions = get_all_questions()
 
+    # Usa le domande modificate se esistono
+    base_questions = st.session_state.get('editable_questions', DEFAULT_QUESTIONS)
+
     # Sezione domande e risposte
     all_valid = True
 
-    for idx, q in enumerate(DEFAULT_QUESTIONS):
+    for idx, q in enumerate(base_questions):
         question = q.replace("{BRAND_NAME}", brand_name)
 
         with st.container():
