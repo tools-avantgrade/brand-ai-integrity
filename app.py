@@ -1449,56 +1449,106 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
         # Bottone per generare e calcolare tutto insieme
         if st.button("🚀 Analizza con le AI e Calcola Brand Integrity", type="primary"):
-            with st.spinner("Generando risposte dalle AI e calcolando il Brand Integrity Score..."):
-                # Step 1: Genera risposte AI
-                progress_bar = st.progress(0)
-                status_text = st.empty()
+            # Stima tempo: ~6 secondi per domanda x 3 AI + 3 secondi valutazione
+            estimated_time = len(questions) * 20  # secondi stimati
 
-                st.session_state.ai_answers = {}
-                errors = []
+            # Container per il timer
+            timer_container = st.empty()
+            progress_bar = st.progress(0)
+            status_text = st.empty()
 
-                total_steps = len(questions) * 3
-                current_step_count = 0
+            start_time = time.time()
 
-                for idx, question in enumerate(questions):
-                    st.session_state.ai_answers[idx] = {}
+            # Mostra stima iniziale
+            timer_container.markdown(
+                f"<div style='background-color: #E3F2FD; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
+                f"<h3 style='margin: 0; color: #1976D2;'>⏱️ Analisi in corso...</h3>"
+                f"<p style='margin: 5px 0; font-size: 1.1em;'>Tempo stimato: ~{estimated_time} secondi</p>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
 
-                    # Gemini
-                    status_text.text(f"⚫ Gemini: domanda {idx + 1}/{len(questions)}...")
-                    progress_bar.progress(current_step_count / total_steps / 2)  # Prima metà per AI generation
+            st.session_state.ai_answers = {}
+            errors = []
 
-                    gemini_answer, gemini_error = generate_gemini_answer(gemini_model, brand_name, question)
-                    if gemini_error:
-                        errors.append(f"Gemini Q{idx + 1}: {gemini_error}")
-                    else:
-                        st.session_state.ai_answers[idx]["gemini"] = gemini_answer
-                    current_step_count += 1
+            total_steps = len(questions) * 3
+            current_step_count = 0
 
-                    # ChatGPT
-                    status_text.text(f"🟢 ChatGPT: domanda {idx + 1}/{len(questions)}...")
-                    progress_bar.progress(current_step_count / total_steps / 2)
+            for idx, question in enumerate(questions):
+                st.session_state.ai_answers[idx] = {}
 
-                    openai_answer, openai_error = generate_openai_answer(openai_client, brand_name, question)
-                    if openai_error:
-                        errors.append(f"ChatGPT Q{idx + 1}: {openai_error}")
-                    else:
-                        st.session_state.ai_answers[idx]["openai"] = openai_answer
-                    current_step_count += 1
+                # Gemini
+                elapsed = int(time.time() - start_time)
+                remaining = max(0, estimated_time - elapsed)
+                timer_container.markdown(
+                    f"<div style='background-color: #E3F2FD; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
+                    f"<h3 style='margin: 0; color: #1976D2;'>⚫ Gemini - Domanda {idx + 1}/{len(questions)}</h3>"
+                    f"<p style='margin: 5px 0; font-size: 1.1em;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+                status_text.text(f"⚫ Gemini: elaborazione domanda {idx + 1} di {len(questions)}...")
+                progress_bar.progress(current_step_count / total_steps / 2)
 
-                    # Claude
-                    status_text.text(f"🟣 Claude: domanda {idx + 1}/{len(questions)}...")
-                    progress_bar.progress(current_step_count / total_steps / 2)
+                gemini_answer, gemini_error = generate_gemini_answer(gemini_model, brand_name, question)
+                if gemini_error:
+                    errors.append(f"Gemini Q{idx + 1}: {gemini_error}")
+                else:
+                    st.session_state.ai_answers[idx]["gemini"] = gemini_answer
+                current_step_count += 1
 
-                    claude_answer, claude_error = generate_claude_answer(anthropic_client, brand_name, question)
-                    if claude_error:
-                        errors.append(f"Claude Q{idx + 1}: {claude_error}")
-                    else:
-                        st.session_state.ai_answers[idx]["claude"] = claude_answer
-                    current_step_count += 1
+                # ChatGPT
+                elapsed = int(time.time() - start_time)
+                remaining = max(0, estimated_time - elapsed)
+                timer_container.markdown(
+                    f"<div style='background-color: #E8F5E9; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
+                    f"<h3 style='margin: 0; color: #2E7D32;'>🟢 ChatGPT - Domanda {idx + 1}/{len(questions)}</h3>"
+                    f"<p style='margin: 5px 0; font-size: 1.1em;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+                status_text.text(f"🟢 ChatGPT: elaborazione domanda {idx + 1} di {len(questions)}...")
+                progress_bar.progress(current_step_count / total_steps / 2)
 
-                # Step 2: Valuta risposte
-                status_text.text("Valutando le risposte...")
-                st.session_state.eval_results = {}
+                openai_answer, openai_error = generate_openai_answer(openai_client, brand_name, question)
+                if openai_error:
+                    errors.append(f"ChatGPT Q{idx + 1}: {openai_error}")
+                else:
+                    st.session_state.ai_answers[idx]["openai"] = openai_answer
+                current_step_count += 1
+
+                # Claude
+                elapsed = int(time.time() - start_time)
+                remaining = max(0, estimated_time - elapsed)
+                timer_container.markdown(
+                    f"<div style='background-color: #F3E5F5; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
+                    f"<h3 style='margin: 0; color: #7B1FA2;'>🟣 Claude - Domanda {idx + 1}/{len(questions)}</h3>"
+                    f"<p style='margin: 5px 0; font-size: 1.1em;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+                status_text.text(f"🟣 Claude: elaborazione domanda {idx + 1} di {len(questions)}...")
+                progress_bar.progress(current_step_count / total_steps / 2)
+
+                claude_answer, claude_error = generate_claude_answer(anthropic_client, brand_name, question)
+                if claude_error:
+                    errors.append(f"Claude Q{idx + 1}: {claude_error}")
+                else:
+                    st.session_state.ai_answers[idx]["claude"] = claude_answer
+                current_step_count += 1
+
+            # Step 2: Valuta risposte
+            elapsed = int(time.time() - start_time)
+            remaining = max(0, estimated_time - elapsed)
+            timer_container.markdown(
+                f"<div style='background-color: #FFF3E0; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
+                f"<h3 style='margin: 0; color: #E65100;'>📊 Valutazione risposte in corso...</h3>"
+                f"<p style='margin: 5px 0; font-size: 1.1em;'>⏱️ Tempo trascorso: {elapsed}s | Quasi finito!</p>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+            status_text.text("Valutando le risposte con AI evaluator...")
+            st.session_state.eval_results = {}
 
                 ai_models = ["gemini", "openai", "claude"]
                 total_evals = len(st.session_state.ai_answers) * len(ai_models)
@@ -1566,6 +1616,19 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     }
 
                 progress_bar.progress(1.0)
+
+                # Calcola tempo totale
+                total_time = int(time.time() - start_time)
+
+                # Mostra messaggio finale con tempo
+                timer_container.markdown(
+                    f"<div style='background-color: #C8E6C9; padding: 20px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
+                    f"<h2 style='margin: 0; color: #2E7D32;'>✅ Analisi completata!</h2>"
+                    f"<p style='margin: 10px 0; font-size: 1.2em;'>⏱️ Tempo totale: {total_time} secondi</p>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+
                 status_text.empty()
                 progress_bar.empty()
 
@@ -1574,8 +1637,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     for err in errors[:5]:  # Mostra solo i primi 5
                         st.text(err)
 
-                st.success("✅ Analisi completata!")
-                time.sleep(1)
+                time.sleep(2)  # Mostra il messaggio di successo per 2 secondi
 
                 # Passa allo step 3
                 st.session_state.current_step = 3
