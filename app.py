@@ -1550,98 +1550,98 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
             status_text.text("Valutando le risposte con AI evaluator...")
             st.session_state.eval_results = {}
 
-                ai_models = ["gemini", "openai", "claude"]
-                total_evals = len(st.session_state.ai_answers) * len(ai_models)
-                current_eval = 0
+            ai_models = ["gemini", "openai", "claude"]
+            total_evals = len(st.session_state.ai_answers) * len(ai_models)
+            current_eval = 0
 
-                for idx in sorted(st.session_state.ai_answers.keys()):
-                    question = questions[idx].replace("{BRAND_NAME}", brand_name)
-                    ai_answers = st.session_state.ai_answers[idx]
-                    user_answer = st.session_state.user_answers[idx]
+            for idx in sorted(st.session_state.ai_answers.keys()):
+                question = questions[idx].replace("{BRAND_NAME}", brand_name)
+                ai_answers = st.session_state.ai_answers[idx]
+                user_answer = st.session_state.user_answers[idx]
 
-                    st.session_state.eval_results[idx] = {}
-                    scores = []
+                st.session_state.eval_results[idx] = {}
+                scores = []
 
+                for ai_name in ai_models:
+                    if ai_name in ai_answers:
+                        progress_bar.progress(0.5 + (current_eval / total_evals / 2))
+
+                        result, error = evaluate_answer(evaluator_model, question, ai_answers[ai_name], user_answer)
+
+                        if error:
+                            errors.append(f"Eval Q{idx + 1} ({ai_name}): {error}")
+                        else:
+                            st.session_state.eval_results[idx][ai_name] = result
+                            scores.append(result['score'])
+
+                        current_eval += 1
+
+                # Average score
+                if scores:
+                    avg_score = sum(scores) / len(scores)
+                    st.session_state.eval_results[idx]['average_score'] = avg_score
+                    st.session_state.eval_results[idx]['is_correct'] = avg_score >= MATCH_THRESHOLD
+
+            # Step 3: Calcola summary
+            if st.session_state.eval_results:
+                total = len(st.session_state.eval_results)
+
+                # Calcola score per ogni AI
+                ai_scores = {ai: [] for ai in ai_models}
+                for result in st.session_state.eval_results.values():
                     for ai_name in ai_models:
-                        if ai_name in ai_answers:
-                            progress_bar.progress(0.5 + (current_eval / total_evals / 2))
+                        if ai_name in result and 'score' in result[ai_name]:
+                            ai_scores[ai_name].append(result[ai_name]['score'])
 
-                            result, error = evaluate_answer(evaluator_model, question, ai_answers[ai_name], user_answer)
+                ai_averages = {
+                    ai: round(sum(scores) / len(scores) * 100) if scores else 0
+                    for ai, scores in ai_scores.items()
+                }
 
-                            if error:
-                                errors.append(f"Eval Q{idx + 1} ({ai_name}): {error}")
-                            else:
-                                st.session_state.eval_results[idx][ai_name] = result
-                                scores.append(result['score'])
+                # Score medio CORRETTO: media degli score delle 3 AI
+                gemini_avg = ai_averages.get('gemini', 0)
+                openai_avg = ai_averages.get('openai', 0)
+                claude_avg = ai_averages.get('claude', 0)
+                integrity_score = round((gemini_avg + openai_avg + claude_avg) / 3)
 
-                            current_eval += 1
+                # Conta risposte corrette (per statistiche)
+                correct = sum(1 for r in st.session_state.eval_results.values() if r.get('is_correct', False))
 
-                    # Average score
-                    if scores:
-                        avg_score = sum(scores) / len(scores)
-                        st.session_state.eval_results[idx]['average_score'] = avg_score
-                        st.session_state.eval_results[idx]['is_correct'] = avg_score >= MATCH_THRESHOLD
+                st.session_state.summary = {
+                    'total': total,
+                    'correct': correct,
+                    'incorrect': total - correct,
+                    'integrity_score': integrity_score,
+                    'ai_scores': ai_averages
+                }
 
-                # Step 3: Calcola summary
-                if st.session_state.eval_results:
-                    total = len(st.session_state.eval_results)
+            progress_bar.progress(1.0)
 
-                    # Calcola score per ogni AI
-                    ai_scores = {ai: [] for ai in ai_models}
-                    for result in st.session_state.eval_results.values():
-                        for ai_name in ai_models:
-                            if ai_name in result and 'score' in result[ai_name]:
-                                ai_scores[ai_name].append(result[ai_name]['score'])
+            # Calcola tempo totale
+            total_time = int(time.time() - start_time)
 
-                    ai_averages = {
-                        ai: round(sum(scores) / len(scores) * 100) if scores else 0
-                        for ai, scores in ai_scores.items()
-                    }
+            # Mostra messaggio finale con tempo
+            timer_container.markdown(
+                f"<div style='background-color: #C8E6C9; padding: 20px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
+                f"<h2 style='margin: 0; color: #2E7D32;'>✅ Analisi completata!</h2>"
+                f"<p style='margin: 10px 0; font-size: 1.2em;'>⏱️ Tempo totale: {total_time} secondi</p>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
 
-                    # Score medio CORRETTO: media degli score delle 3 AI
-                    gemini_avg = ai_averages.get('gemini', 0)
-                    openai_avg = ai_averages.get('openai', 0)
-                    claude_avg = ai_averages.get('claude', 0)
-                    integrity_score = round((gemini_avg + openai_avg + claude_avg) / 3)
+            status_text.empty()
+            progress_bar.empty()
 
-                    # Conta risposte corrette (per statistiche)
-                    correct = sum(1 for r in st.session_state.eval_results.values() if r.get('is_correct', False))
+            if errors:
+                st.warning("⚠️ Alcuni errori durante l'elaborazione:")
+                for err in errors[:5]:  # Mostra solo i primi 5
+                    st.text(err)
 
-                    st.session_state.summary = {
-                        'total': total,
-                        'correct': correct,
-                        'incorrect': total - correct,
-                        'integrity_score': integrity_score,
-                        'ai_scores': ai_averages
-                    }
+            time.sleep(2)  # Mostra il messaggio di successo per 2 secondi
 
-                progress_bar.progress(1.0)
-
-                # Calcola tempo totale
-                total_time = int(time.time() - start_time)
-
-                # Mostra messaggio finale con tempo
-                timer_container.markdown(
-                    f"<div style='background-color: #C8E6C9; padding: 20px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
-                    f"<h2 style='margin: 0; color: #2E7D32;'>✅ Analisi completata!</h2>"
-                    f"<p style='margin: 10px 0; font-size: 1.2em;'>⏱️ Tempo totale: {total_time} secondi</p>"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
-
-                status_text.empty()
-                progress_bar.empty()
-
-                if errors:
-                    st.warning("⚠️ Alcuni errori durante l'elaborazione:")
-                    for err in errors[:5]:  # Mostra solo i primi 5
-                        st.text(err)
-
-                time.sleep(2)  # Mostra il messaggio di successo per 2 secondi
-
-                # Passa allo step 3
-                st.session_state.current_step = 3
-                st.rerun()
+            # Passa allo step 3
+            st.session_state.current_step = 3
+            st.rerun()
     else:
         st.info("Completa tutte le risposte per procedere con l'analisi")
 
