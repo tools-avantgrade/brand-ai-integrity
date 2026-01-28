@@ -1784,6 +1784,38 @@ def render_step_3_results():
                 else:
                     st.warning("Non disponibile")
 
+    # === CALL TO ACTION - Contatta AvantGrade ===
+    st.markdown("---")
+    st.markdown("### 📧 Vuoi migliorare la tua Brand AI Integrity?")
+
+    st.markdown(
+        """
+        <div style='background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
+                    padding: 30px;
+                    border-radius: 15px;
+                    text-align: center;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                    margin: 20px 0;'>
+            <h2 style='color: white; margin: 0 0 15px 0; font-size: 1.8em;'>
+                🚀 Migliora la presenza del tuo brand nelle AI
+            </h2>
+            <p style='color: white; font-size: 1.2em; margin: 0 0 20px 0; opacity: 0.95;'>
+                Il Team Innovation di AvantGrade può aiutarti a ottimizzare la rappresentazione del tuo brand
+                nelle intelligenze artificiali e migliorare il tuo Brand AI Integrity Score.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.link_button(
+            "📧 Contatta AvantGrade.com",
+            "mailto:info@avantgrade.com?subject=Interesse%20Brand%20AI%20Integrity&body=Ciao,%0A%0Aho%20usato%20il%20Brand%20AI%20Integrity%20Tool%20e%20vorrei%20saperne%20di%20più%20su%20come%20migliorare%20la%20presenza%20del%20mio%20brand%20nelle%20AI.%0A%0AGrazie!",
+            use_container_width=True
+        )
+
 
 def main():
     """Main app con flusso step-by-step."""
