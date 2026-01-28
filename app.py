@@ -1349,38 +1349,6 @@ def render_step_1_brand():
         st.session_state.eval_results = {}
         st.session_state.summary = None
 
-    # Sezione per modificare le domande
-    with st.expander("✏️ Modifica domande di analisi", expanded=False):
-        st.caption("Puoi personalizzare le domande che verranno poste alle AI")
-
-        # Inizializza le domande modificabili in session state se non esistono
-        if 'editable_questions' not in st.session_state:
-            st.session_state.editable_questions = DEFAULT_QUESTIONS.copy()
-
-        modified = False
-        for idx, default_q in enumerate(DEFAULT_QUESTIONS):
-            new_q = st.text_area(
-                f"Domanda {idx + 1}",
-                value=st.session_state.editable_questions[idx],
-                key=f"edit_q_{idx}",
-                height=80
-            )
-            if new_q != st.session_state.editable_questions[idx]:
-                st.session_state.editable_questions[idx] = new_q
-                modified = True
-
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("💾 Salva modifiche", disabled=not modified):
-                # Le modifiche sono già salvate in session_state
-                st.success("✓ Domande aggiornate!")
-                st.rerun()
-        with col2:
-            if st.button("🔄 Ripristina default"):
-                st.session_state.editable_questions = DEFAULT_QUESTIONS.copy()
-                st.success("✓ Domande ripristinate!")
-                st.rerun()
-
     if brand_name:
         st.success(f"✓ Brand selezionato: **{brand_name}**")
 
@@ -1400,8 +1368,12 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
     questions = get_all_questions()
 
-    # Usa le domande modificate se esistono
-    base_questions = st.session_state.get('editable_questions', DEFAULT_QUESTIONS)
+    # Inizializza le domande modificabili se non esistono
+    if 'editable_questions' not in st.session_state:
+        st.session_state.editable_questions = DEFAULT_QUESTIONS.copy()
+
+    # Usa le domande modificate
+    base_questions = st.session_state.editable_questions
 
     # Sezione domande e risposte
     all_valid = True
@@ -1410,7 +1382,39 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
         question = q.replace("{BRAND_NAME}", brand_name)
 
         with st.container():
-            st.markdown(f"**Domanda {idx + 1}**")
+            # Header con numero domanda e matitina per modificare
+            col_title, col_edit = st.columns([5, 1])
+            with col_title:
+                st.markdown(f"**Domanda {idx + 1}**")
+            with col_edit:
+                if st.button("✏️", key=f"edit_btn_{idx}", help="Modifica questa domanda"):
+                    # Toggle edit mode per questa domanda
+                    edit_key = f"editing_{idx}"
+                    st.session_state[edit_key] = not st.session_state.get(edit_key, False)
+
+            # Se in modalità edit, mostra text_area editabile
+            if st.session_state.get(f"editing_{idx}", False):
+                with st.expander("✏️ Modifica domanda", expanded=True):
+                    new_question = st.text_area(
+                        "Modifica la domanda",
+                        value=q,
+                        key=f"edit_question_{idx}",
+                        height=80
+                    )
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("💾 Salva", key=f"save_q_{idx}"):
+                            st.session_state.editable_questions[idx] = new_question
+                            st.session_state[f"editing_{idx}"] = False
+                            st.success("✓ Domanda aggiornata!")
+                            st.rerun()
+                    with col2:
+                        if st.button("❌ Annulla", key=f"cancel_q_{idx}"):
+                            st.session_state[f"editing_{idx}"] = False
+                            st.rerun()
+
+            # Mostra la domanda (disabled)
             st.text_area(
                 "",
                 value=question,
