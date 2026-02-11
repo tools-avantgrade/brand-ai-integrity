@@ -26,15 +26,16 @@ from datetime import datetime
 # Configurazione
 MATCH_THRESHOLD = 0.75
 DEFAULT_QUESTIONS = [
-    "Qual è la mission del brand {BRAND_NAME}?",
     "Quali sono i principali prodotti/servizi offerti da {BRAND_NAME}?",
-    "Quali sono gli elementi identitari che differenziano il brand {BRAND_NAME} dalla concorrenza? (unique selling proposition, punti di forza riconosciuti, expertise specifiche, storia distintiva)",
-    "Quali sono i contatti e i canali ufficiali del brand {BRAND_NAME}? (sito web principale, sedi operative, numeri di telefono, email istituzionali, profili social verificati)",
-    "Qual è il pubblico target principale di {BRAND_NAME}?"
+    "In che settore opera {BRAND_NAME}?",
+    "Qual è il pubblico target principale di {BRAND_NAME}?",
+    "{BRAND_NAME} ha sedi operative? Dove?",
+    "Quali sono i canali social ufficiali del brand {BRAND_NAME}? (ad esempio linkedin, instagram)",
+    "Quali sono i contatti del brand {BRAND_NAME}? (Ad es. inserisci il numero di telefono, pagine contatto del sito)"
 ]
 MIN_QUESTIONS = 3
 MAX_QUESTIONS = 10
-MIN_ANSWER_LENGTH = 20
+# MIN_ANSWER_LENGTH = 20  # DEPRECATED: Rimossa validazione lunghezza minima
 
 
 def init_session_state():
@@ -60,10 +61,8 @@ def init_session_state():
 
 
 def get_all_questions():
-    """Restituisce tutte le domande (modificate dall'utente o default + personalizzate)."""
-    # Usa le domande modificate se esistono, altrimenti usa DEFAULT_QUESTIONS
-    base_questions = st.session_state.get('editable_questions', DEFAULT_QUESTIONS)
-    return base_questions + st.session_state.custom_questions
+    """Restituisce tutte le domande (default + personalizzate)."""
+    return DEFAULT_QUESTIONS + st.session_state.custom_questions
 
 
 def check_secrets() -> Tuple[bool, Optional[str]]:
@@ -326,7 +325,7 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
     # Tabella score principale
     summary_data = [
         ['METRICA', 'VALORE', 'VALUTAZIONE'],
-        ['Brand Integrity Score (Media)', f"{score}/100", get_judgment(score)],
+        ['Punteggio complessivo di Brand AI Integrity', f"{score}/100", get_judgment(score)],
         ['', '', ''],
         ['Score Gemini', f"{ai_scores.get('gemini', 0)}/100", get_judgment(ai_scores.get('gemini', 0))],
         ['Score ChatGPT', f"{ai_scores.get('openai', 0)}/100", get_judgment(ai_scores.get('openai', 0))],
@@ -375,7 +374,7 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
     # === LEGENDA ===
     story.append(Paragraph("<b>Legenda Valutazioni:</b>", styles['Normal']))
     legend_data = [
-        ['', 'ECCELLENTE (80-100)', 'BUONO (60-79)', 'DA MIGLIORARE (<60)'],
+        ['', 'ECCELLENTE (80-100)', 'BUONO (60-79)', 'SCARSO (<60)'],
     ]
     legend_table = Table(legend_data, colWidths=[0.5*inch, 1.8*inch, 1.8*inch, 1.8*inch])
     legend_table.setStyle(TableStyle([
@@ -411,7 +410,7 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
         score_status = "✓ CORRETTA" if is_correct else "✗ DA MIGLIORARE"
         score_color_hex = '#4CAF50' if is_correct else '#F44336'
 
-        status_data = [['Score Medio', f"{avg_score:.2f}/1.00", score_status]]
+        status_data = [['Punteggio complessivo', f"{avg_score:.2f}/1.00", score_status]]
         status_table = Table(status_data, colWidths=[1.5*inch, 1.5*inch, 2*inch])
         status_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(score_color_hex)),
@@ -576,7 +575,7 @@ def get_judgment(score: int) -> str:
     elif score >= 60:
         return "BUONO"
     else:
-        return "DA MIGLIORARE"
+        return "SCARSO"
 
 
 @st.cache_data(ttl=600, show_spinner=False)  # Cache ridotta
@@ -1368,12 +1367,8 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
     questions = get_all_questions()
 
-    # Inizializza le domande modificabili se non esistono
-    if 'editable_questions' not in st.session_state:
-        st.session_state.editable_questions = DEFAULT_QUESTIONS.copy()
-
-    # Usa le domande modificate
-    base_questions = st.session_state.editable_questions
+    # Usa le domande default (non più modificabili)
+    base_questions = DEFAULT_QUESTIONS
 
     # Sezione domande e risposte
     all_valid = True
@@ -1382,37 +1377,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
         question = q.replace("{BRAND_NAME}", brand_name)
 
         with st.container():
-            # Header con numero domanda e matitina per modificare
-            col_title, col_edit = st.columns([5, 1])
-            with col_title:
-                st.markdown(f"**Domanda {idx + 1}**")
-            with col_edit:
-                if st.button("✏️", key=f"edit_btn_{idx}", help="Modifica questa domanda"):
-                    # Toggle edit mode per questa domanda
-                    edit_key = f"editing_{idx}"
-                    st.session_state[edit_key] = not st.session_state.get(edit_key, False)
-
-            # Se in modalità edit, mostra text_area editabile
-            if st.session_state.get(f"editing_{idx}", False):
-                with st.expander("✏️ Modifica domanda", expanded=True):
-                    new_question = st.text_area(
-                        "Modifica la domanda",
-                        value=q,
-                        key=f"edit_question_{idx}",
-                        height=80
-                    )
-
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("💾 Salva", key=f"save_q_{idx}"):
-                            st.session_state.editable_questions[idx] = new_question
-                            st.session_state[f"editing_{idx}"] = False
-                            st.success("✓ Domanda aggiornata!")
-                            st.rerun()
-                    with col2:
-                        if st.button("❌ Annulla", key=f"cancel_q_{idx}"):
-                            st.session_state[f"editing_{idx}"] = False
-                            st.rerun()
+            st.markdown(f"**Domanda {idx + 1}**")
 
             # Mostra la domanda (disabled)
             st.text_area(
@@ -1425,7 +1390,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
             )
 
             user_answer = st.text_area(
-                f"La tua risposta (min {MIN_ANSWER_LENGTH} caratteri)",
+                "La tua risposta",
                 value=st.session_state.user_answers.get(idx, ""),
                 key=f"user_answer_{idx}",
                 height=100,
@@ -1434,11 +1399,8 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
             st.session_state.user_answers[idx] = user_answer
 
-            # Mostra warning solo se l'utente ha iniziato a scrivere ma non ha raggiunto il minimo
-            if len(user_answer.strip()) > 0 and len(user_answer.strip()) < MIN_ANSWER_LENGTH:
-                st.warning(f"⚠️ Risposta troppo corta (min {MIN_ANSWER_LENGTH} caratteri)")
-                all_valid = False
-            elif len(user_answer.strip()) == 0:
+            # Validazione: solo risposta vuota
+            if len(user_answer.strip()) == 0:
                 all_valid = False
 
             st.markdown("---")
@@ -1449,24 +1411,25 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
         # Bottone per generare e calcolare tutto insieme
         if st.button("🚀 Analizza con le AI e Calcola Brand Integrity", type="primary"):
-            # Stima tempo: ~6 secondi per domanda x 3 AI + 3 secondi valutazione
-            estimated_time = len(questions) * 20  # secondi stimati
+            with st.spinner("🔄 Analisi in corso..."):
+                # Stima tempo: ~6 secondi per domanda x 3 AI + 3 secondi valutazione
+                estimated_time = len(questions) * 20  # secondi stimati
 
-            # Container per il timer
-            timer_container = st.empty()
-            progress_bar = st.progress(0)
-            status_text = st.empty()
+                # Container per il timer
+                timer_container = st.empty()
+                progress_bar = st.progress(0)
+                status_text = st.empty()
 
             start_time = time.time()
 
-            # Mostra stima iniziale
-            timer_container.markdown(
-                f"<div style='background-color: #E3F2FD; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
-                f"<h3 style='margin: 0; color: #1976D2;'>⏱️ Analisi in corso...</h3>"
-                f"<p style='margin: 5px 0; font-size: 1.1em;'>Tempo stimato: ~{estimated_time} secondi</p>"
-                f"</div>",
-                unsafe_allow_html=True
-            )
+                # Mostra stima iniziale
+                timer_container.markdown(
+                    f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
+                    f"<h2 style='margin: 0; color: #1976D2;'>⏱️ Analisi in corso...</h2>"
+                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>Tempo stimato: ~{estimated_time} secondi</p>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
 
             st.session_state.ai_answers = {}
             errors = []
@@ -1481,9 +1444,9 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 elapsed = int(time.time() - start_time)
                 remaining = max(0, estimated_time - elapsed)
                 timer_container.markdown(
-                    f"<div style='background-color: #E3F2FD; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
-                    f"<h3 style='margin: 0; color: #1976D2;'>⚫ Gemini - Domanda {idx + 1}/{len(questions)}</h3>"
-                    f"<p style='margin: 5px 0; font-size: 1.1em;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                    f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
+                    f"<h2 style='margin: 0; color: #1976D2;'>⚫ Gemini - Domanda {idx + 1}/{len(questions)}</h2>"
+                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -1501,9 +1464,9 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 elapsed = int(time.time() - start_time)
                 remaining = max(0, estimated_time - elapsed)
                 timer_container.markdown(
-                    f"<div style='background-color: #E8F5E9; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
-                    f"<h3 style='margin: 0; color: #2E7D32;'>🟢 ChatGPT - Domanda {idx + 1}/{len(questions)}</h3>"
-                    f"<p style='margin: 5px 0; font-size: 1.1em;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                    f"<div style='background-color: #E8F5E9; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
+                    f"<h2 style='margin: 0; color: #2E7D32;'>🟢 ChatGPT - Domanda {idx + 1}/{len(questions)}</h2>"
+                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -1521,9 +1484,9 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 elapsed = int(time.time() - start_time)
                 remaining = max(0, estimated_time - elapsed)
                 timer_container.markdown(
-                    f"<div style='background-color: #F3E5F5; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
-                    f"<h3 style='margin: 0; color: #7B1FA2;'>🟣 Claude - Domanda {idx + 1}/{len(questions)}</h3>"
-                    f"<p style='margin: 5px 0; font-size: 1.1em;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                    f"<div style='background-color: #F3E5F5; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #7B1FA2;'>"
+                    f"<h2 style='margin: 0; color: #7B1FA2;'>🟣 Claude - Domanda {idx + 1}/{len(questions)}</h2>"
+                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -1537,16 +1500,16 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     st.session_state.ai_answers[idx]["claude"] = claude_answer
                 current_step_count += 1
 
-            # Step 2: Valuta risposte
-            elapsed = int(time.time() - start_time)
-            remaining = max(0, estimated_time - elapsed)
-            timer_container.markdown(
-                f"<div style='background-color: #FFF3E0; padding: 15px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
-                f"<h3 style='margin: 0; color: #E65100;'>📊 Valutazione risposte in corso...</h3>"
-                f"<p style='margin: 5px 0; font-size: 1.1em;'>⏱️ Tempo trascorso: {elapsed}s | Quasi finito!</p>"
-                f"</div>",
-                unsafe_allow_html=True
-            )
+                # Step 2: Valuta risposte
+                elapsed = int(time.time() - start_time)
+                remaining = max(0, estimated_time - elapsed)
+                timer_container.markdown(
+                    f"<div style='background-color: #FFF3E0; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #E65100;'>"
+                    f"<h2 style='margin: 0; color: #E65100;'>📊 Valutazione risposte in corso...</h2>"
+                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Quasi finito!</p>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
             status_text.text("Valutando le risposte con AI evaluator...")
             st.session_state.eval_results = {}
 
@@ -1615,33 +1578,33 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     'ai_scores': ai_averages
                 }
 
-            progress_bar.progress(1.0)
+                progress_bar.progress(1.0)
 
-            # Calcola tempo totale
-            total_time = int(time.time() - start_time)
+                # Calcola tempo totale
+                total_time = int(time.time() - start_time)
 
-            # Mostra messaggio finale con tempo
-            timer_container.markdown(
-                f"<div style='background-color: #C8E6C9; padding: 20px; border-radius: 10px; text-align: center; margin: 10px 0;'>"
-                f"<h2 style='margin: 0; color: #2E7D32;'>✅ Analisi completata!</h2>"
-                f"<p style='margin: 10px 0; font-size: 1.2em;'>⏱️ Tempo totale: {total_time} secondi</p>"
-                f"</div>",
-                unsafe_allow_html=True
-            )
+                # Mostra messaggio finale con tempo
+                timer_container.markdown(
+                    f"<div style='background-color: #C8E6C9; padding: 25px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
+                    f"<h1 style='margin: 0; color: #2E7D32;'>✅ Analisi completata!</h1>"
+                    f"<p style='margin: 15px 0; font-size: 1.4em; font-weight: bold;'>⏱️ Tempo totale: {total_time} secondi</p>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
 
-            status_text.empty()
-            progress_bar.empty()
+                status_text.empty()
+                progress_bar.empty()
 
-            if errors:
-                st.warning("⚠️ Alcuni errori durante l'elaborazione:")
-                for err in errors[:5]:  # Mostra solo i primi 5
-                    st.text(err)
+                if errors:
+                    st.warning("⚠️ Alcuni errori durante l'elaborazione:")
+                    for err in errors[:5]:  # Mostra solo i primi 5
+                        st.text(err)
 
-            time.sleep(2)  # Mostra il messaggio di successo per 2 secondi
+                time.sleep(2)  # Mostra il messaggio di successo per 2 secondi
 
-            # Passa allo step 3
-            st.session_state.current_step = 3
-            st.rerun()
+                # Passa allo step 3
+                st.session_state.current_step = 3
+                st.rerun()
     else:
         st.info("Completa tutte le risposte per procedere con l'analisi")
 
@@ -1680,23 +1643,32 @@ def render_step_3_results():
         color = "#4CAF50"  # Verde
         emoji = "🟢"
         judgment = "ECCELLENTE"
+        message = "Ottimo lavoro: l'AI rappresenta il brand in modo chiaro, coerente e affidabile. 😎"
     elif score >= 60:
         color = "#FF9800"  # Arancione
         emoji = "🟡"
         judgment = "BUONO"
+        message = "Buono, ma puoi fare di meglio! Il brand è generalmente rappresentato in modo corretto, ma sono presenti alcune imprecisioni o incoerenze migliorabili."
     else:
         color = "#F44336"  # Rosso
         emoji = "🔴"
-        judgment = "DA MIGLIORARE"
+        judgment = "SCARSO"
+        message = "Non ci siamo! 😭 Le risposte dell'AI risultano spesso inaccurate o incoerenti e non rappresentano correttamente il brand. Che ne dici di fare due chiacchiere?"
 
     st.markdown(
         f"""
         <div style='background-color: {color}; padding: 30px; border-radius: 10px; text-align: center;'>
-            <h3 style='color: white; margin: 0; font-size: 1.2em; opacity: 0.9;'>Score Medio (3 AI)</h3>
+            <h3 style='color: white; margin: 0; font-size: 1.2em; opacity: 0.9;'>Punteggio complessivo di Brand AI Integrity</h3>
             <h1 style='color: white; margin: 10px 0; font-size: 4em;'>{emoji} {score}/100</h1>
             <h2 style='color: white; margin: 0;'>{judgment}</h2>
         </div>
         """,
+        unsafe_allow_html=True
+    )
+
+    # Mostra messaggio descrittivo sotto il box
+    st.markdown(
+        f"<p style='text-align: center; font-size: 1.2em; margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 8px;'>{message}</p>",
         unsafe_allow_html=True
     )
 
@@ -1896,7 +1868,7 @@ def main():
 
     # Header
     st.title("🎯 Brand AI Integrity Tool")
-    st.markdown("**Misura quanto le AI rappresentano correttamente il tuo brand**")
+    st.markdown("**Misura quanto le risposte dell'AI rappresentano correttamente il tuo brand.**")
     st.markdown("---")
 
     # Check secrets
