@@ -1420,7 +1420,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
-            start_time = time.time()
+                start_time = time.time()
 
                 # Mostra stima iniziale
                 timer_container.markdown(
@@ -1431,74 +1431,74 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     unsafe_allow_html=True
                 )
 
-            st.session_state.ai_answers = {}
-            errors = []
+                st.session_state.ai_answers = {}
+                errors = []
 
-            total_steps = len(questions) * 3
-            current_step_count = 0
+                total_steps = len(questions) * 3
+                current_step_count = 0
 
-            for idx, question in enumerate(questions):
-                st.session_state.ai_answers[idx] = {}
+                for idx, question in enumerate(questions):
+                    st.session_state.ai_answers[idx] = {}
 
-                # Gemini
-                elapsed = int(time.time() - start_time)
-                remaining = max(0, estimated_time - elapsed)
-                timer_container.markdown(
-                    f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
-                    f"<h2 style='margin: 0; color: #1976D2;'>⚫ Gemini - Domanda {idx + 1}/{len(questions)}</h2>"
-                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
-                status_text.text(f"⚫ Gemini: elaborazione domanda {idx + 1} di {len(questions)}...")
-                progress_bar.progress(current_step_count / total_steps / 2)
+                    # Gemini
+                    elapsed = int(time.time() - start_time)
+                    remaining = max(0, estimated_time - elapsed)
+                    timer_container.markdown(
+                        f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
+                        f"<h2 style='margin: 0; color: #1976D2;'>⚫ Gemini - Domanda {idx + 1}/{len(questions)}</h2>"
+                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+                    status_text.text(f"⚫ Gemini: elaborazione domanda {idx + 1} di {len(questions)}...")
+                    progress_bar.progress(current_step_count / total_steps / 2)
 
-                gemini_answer, gemini_error = generate_gemini_answer(gemini_model, brand_name, question)
-                if gemini_error:
-                    errors.append(f"Gemini Q{idx + 1}: {gemini_error}")
-                else:
-                    st.session_state.ai_answers[idx]["gemini"] = gemini_answer
-                current_step_count += 1
+                    gemini_answer, gemini_error = generate_gemini_answer(gemini_model, brand_name, question)
+                    if gemini_error:
+                        errors.append(f"Gemini Q{idx + 1}: {gemini_error}")
+                    else:
+                        st.session_state.ai_answers[idx]["gemini"] = gemini_answer
+                    current_step_count += 1
 
-                # ChatGPT
-                elapsed = int(time.time() - start_time)
-                remaining = max(0, estimated_time - elapsed)
-                timer_container.markdown(
-                    f"<div style='background-color: #E8F5E9; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
-                    f"<h2 style='margin: 0; color: #2E7D32;'>🟢 ChatGPT - Domanda {idx + 1}/{len(questions)}</h2>"
-                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
-                status_text.text(f"🟢 ChatGPT: elaborazione domanda {idx + 1} di {len(questions)}...")
-                progress_bar.progress(current_step_count / total_steps / 2)
+                    # ChatGPT
+                    elapsed = int(time.time() - start_time)
+                    remaining = max(0, estimated_time - elapsed)
+                    timer_container.markdown(
+                        f"<div style='background-color: #E8F5E9; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
+                        f"<h2 style='margin: 0; color: #2E7D32;'>🟢 ChatGPT - Domanda {idx + 1}/{len(questions)}</h2>"
+                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+                    status_text.text(f"🟢 ChatGPT: elaborazione domanda {idx + 1} di {len(questions)}...")
+                    progress_bar.progress(current_step_count / total_steps / 2)
 
-                openai_answer, openai_error = generate_openai_answer(openai_client, brand_name, question)
-                if openai_error:
-                    errors.append(f"ChatGPT Q{idx + 1}: {openai_error}")
-                else:
-                    st.session_state.ai_answers[idx]["openai"] = openai_answer
-                current_step_count += 1
+                    openai_answer, openai_error = generate_openai_answer(openai_client, brand_name, question)
+                    if openai_error:
+                        errors.append(f"ChatGPT Q{idx + 1}: {openai_error}")
+                    else:
+                        st.session_state.ai_answers[idx]["openai"] = openai_answer
+                    current_step_count += 1
 
-                # Claude
-                elapsed = int(time.time() - start_time)
-                remaining = max(0, estimated_time - elapsed)
-                timer_container.markdown(
-                    f"<div style='background-color: #F3E5F5; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #7B1FA2;'>"
-                    f"<h2 style='margin: 0; color: #7B1FA2;'>🟣 Claude - Domanda {idx + 1}/{len(questions)}</h2>"
-                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
-                    f"</div>",
-                    unsafe_allow_html=True
-                )
-                status_text.text(f"🟣 Claude: elaborazione domanda {idx + 1} di {len(questions)}...")
-                progress_bar.progress(current_step_count / total_steps / 2)
+                    # Claude
+                    elapsed = int(time.time() - start_time)
+                    remaining = max(0, estimated_time - elapsed)
+                    timer_container.markdown(
+                        f"<div style='background-color: #F3E5F5; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #7B1FA2;'>"
+                        f"<h2 style='margin: 0; color: #7B1FA2;'>🟣 Claude - Domanda {idx + 1}/{len(questions)}</h2>"
+                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+                    status_text.text(f"🟣 Claude: elaborazione domanda {idx + 1} di {len(questions)}...")
+                    progress_bar.progress(current_step_count / total_steps / 2)
 
-                claude_answer, claude_error = generate_claude_answer(anthropic_client, brand_name, question)
-                if claude_error:
-                    errors.append(f"Claude Q{idx + 1}: {claude_error}")
-                else:
-                    st.session_state.ai_answers[idx]["claude"] = claude_answer
-                current_step_count += 1
+                    claude_answer, claude_error = generate_claude_answer(anthropic_client, brand_name, question)
+                    if claude_error:
+                        errors.append(f"Claude Q{idx + 1}: {claude_error}")
+                    else:
+                        st.session_state.ai_answers[idx]["claude"] = claude_answer
+                    current_step_count += 1
 
                 # Step 2: Valuta risposte
                 elapsed = int(time.time() - start_time)
@@ -1510,73 +1510,73 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     f"</div>",
                     unsafe_allow_html=True
                 )
-            status_text.text("Valutando le risposte con AI evaluator...")
-            st.session_state.eval_results = {}
+                status_text.text("Valutando le risposte con AI evaluator...")
+                st.session_state.eval_results = {}
 
-            ai_models = ["gemini", "openai", "claude"]
-            total_evals = len(st.session_state.ai_answers) * len(ai_models)
-            current_eval = 0
+                ai_models = ["gemini", "openai", "claude"]
+                total_evals = len(st.session_state.ai_answers) * len(ai_models)
+                current_eval = 0
 
-            for idx in sorted(st.session_state.ai_answers.keys()):
-                question = questions[idx].replace("{BRAND_NAME}", brand_name)
-                ai_answers = st.session_state.ai_answers[idx]
-                user_answer = st.session_state.user_answers[idx]
+                for idx in sorted(st.session_state.ai_answers.keys()):
+                    question = questions[idx].replace("{BRAND_NAME}", brand_name)
+                    ai_answers = st.session_state.ai_answers[idx]
+                    user_answer = st.session_state.user_answers[idx]
 
-                st.session_state.eval_results[idx] = {}
-                scores = []
+                    st.session_state.eval_results[idx] = {}
+                    scores = []
 
-                for ai_name in ai_models:
-                    if ai_name in ai_answers:
-                        progress_bar.progress(0.5 + (current_eval / total_evals / 2))
-
-                        result, error = evaluate_answer(evaluator_model, question, ai_answers[ai_name], user_answer)
-
-                        if error:
-                            errors.append(f"Eval Q{idx + 1} ({ai_name}): {error}")
-                        else:
-                            st.session_state.eval_results[idx][ai_name] = result
-                            scores.append(result['score'])
-
-                        current_eval += 1
-
-                # Average score
-                if scores:
-                    avg_score = sum(scores) / len(scores)
-                    st.session_state.eval_results[idx]['average_score'] = avg_score
-                    st.session_state.eval_results[idx]['is_correct'] = avg_score >= MATCH_THRESHOLD
-
-            # Step 3: Calcola summary
-            if st.session_state.eval_results:
-                total = len(st.session_state.eval_results)
-
-                # Calcola score per ogni AI
-                ai_scores = {ai: [] for ai in ai_models}
-                for result in st.session_state.eval_results.values():
                     for ai_name in ai_models:
-                        if ai_name in result and 'score' in result[ai_name]:
-                            ai_scores[ai_name].append(result[ai_name]['score'])
+                        if ai_name in ai_answers:
+                            progress_bar.progress(0.5 + (current_eval / total_evals / 2))
 
-                ai_averages = {
-                    ai: round(sum(scores) / len(scores) * 100) if scores else 0
-                    for ai, scores in ai_scores.items()
-                }
+                            result, error = evaluate_answer(evaluator_model, question, ai_answers[ai_name], user_answer)
 
-                # Score medio CORRETTO: media degli score delle 3 AI
-                gemini_avg = ai_averages.get('gemini', 0)
-                openai_avg = ai_averages.get('openai', 0)
-                claude_avg = ai_averages.get('claude', 0)
-                integrity_score = round((gemini_avg + openai_avg + claude_avg) / 3)
+                            if error:
+                                errors.append(f"Eval Q{idx + 1} ({ai_name}): {error}")
+                            else:
+                                st.session_state.eval_results[idx][ai_name] = result
+                                scores.append(result['score'])
 
-                # Conta risposte corrette (per statistiche)
-                correct = sum(1 for r in st.session_state.eval_results.values() if r.get('is_correct', False))
+                            current_eval += 1
 
-                st.session_state.summary = {
-                    'total': total,
-                    'correct': correct,
-                    'incorrect': total - correct,
-                    'integrity_score': integrity_score,
-                    'ai_scores': ai_averages
-                }
+                    # Average score
+                    if scores:
+                        avg_score = sum(scores) / len(scores)
+                        st.session_state.eval_results[idx]['average_score'] = avg_score
+                        st.session_state.eval_results[idx]['is_correct'] = avg_score >= MATCH_THRESHOLD
+
+                # Step 3: Calcola summary
+                if st.session_state.eval_results:
+                    total = len(st.session_state.eval_results)
+
+                    # Calcola score per ogni AI
+                    ai_scores = {ai: [] for ai in ai_models}
+                    for result in st.session_state.eval_results.values():
+                        for ai_name in ai_models:
+                            if ai_name in result and 'score' in result[ai_name]:
+                                ai_scores[ai_name].append(result[ai_name]['score'])
+
+                    ai_averages = {
+                        ai: round(sum(scores) / len(scores) * 100) if scores else 0
+                        for ai, scores in ai_scores.items()
+                    }
+
+                    # Score medio CORRETTO: media degli score delle 3 AI
+                    gemini_avg = ai_averages.get('gemini', 0)
+                    openai_avg = ai_averages.get('openai', 0)
+                    claude_avg = ai_averages.get('claude', 0)
+                    integrity_score = round((gemini_avg + openai_avg + claude_avg) / 3)
+
+                    # Conta risposte corrette (per statistiche)
+                    correct = sum(1 for r in st.session_state.eval_results.values() if r.get('is_correct', False))
+
+                    st.session_state.summary = {
+                        'total': total,
+                        'correct': correct,
+                        'incorrect': total - correct,
+                        'integrity_score': integrity_score,
+                        'ai_scores': ai_averages
+                    }
 
                 progress_bar.progress(1.0)
 
