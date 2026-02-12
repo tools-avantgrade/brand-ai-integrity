@@ -1668,7 +1668,7 @@ def render_step_3_results():
 
     # Mostra messaggio descrittivo sotto il box
     st.markdown(
-        f"<p style='text-align: center; font-size: 1.2em; margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 8px;'>{message}</p>",
+        f"<p style='text-align: center; font-size: 1.2em; margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 8px; color: #333333;'>{message}</p>",
         unsafe_allow_html=True
     )
 
@@ -1731,32 +1731,6 @@ def render_step_3_results():
         st.metric("✅ Risposte corrette (media)", summary['correct'])
     with col3:
         st.metric("❌ Risposte sbagliate (media)", summary['incorrect'])
-
-    st.markdown("---")
-
-    # Export PDF
-    st.markdown("### 📥 Scarica il Report")
-
-    try:
-        questions = get_all_questions()
-        pdf_buffer = generate_pdf_report(
-            brand_name,
-            summary,
-            st.session_state.eval_results,
-            questions,
-            st.session_state.user_answers,
-            st.session_state.ai_answers
-        )
-
-        st.download_button(
-            label="📄 Scarica Report PDF",
-            data=pdf_buffer,
-            file_name=f"brand_ai_integrity_{brand_name.lower().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
-            mime="application/pdf",
-            type="primary"
-        )
-    except Exception as e:
-        st.error(f"Errore nella generazione del PDF: {str(e)}")
 
     st.markdown("---")
 
