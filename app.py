@@ -1426,7 +1426,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 timer_container.markdown(
                     f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
                     f"<h2 style='margin: 0; color: #1976D2;'>⏱️ Analisi in corso...</h2>"
-                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>Tempo stimato: ~{estimated_time} secondi</p>"
+                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #1976D2;'>Tempo stimato: ~{estimated_time} secondi</p>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -1446,7 +1446,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     timer_container.markdown(
                         f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
                         f"<h2 style='margin: 0; color: #1976D2;'>⚫ Gemini - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #1976D2;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1466,7 +1466,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     timer_container.markdown(
                         f"<div style='background-color: #E8F5E9; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
                         f"<h2 style='margin: 0; color: #2E7D32;'>🟢 ChatGPT - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #2E7D32;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1486,7 +1486,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     timer_container.markdown(
                         f"<div style='background-color: #F3E5F5; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #7B1FA2;'>"
                         f"<h2 style='margin: 0; color: #7B1FA2;'>🟣 Claude - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #7B1FA2;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1506,7 +1506,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 timer_container.markdown(
                     f"<div style='background-color: #FFF3E0; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #E65100;'>"
                     f"<h2 style='margin: 0; color: #E65100;'>📊 Valutazione risposte in corso...</h2>"
-                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold;'>⏱️ Tempo trascorso: {elapsed}s | Quasi finito!</p>"
+                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #E65100;'>⏱️ Tempo trascorso: {elapsed}s | Quasi finito!</p>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -1587,7 +1587,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 timer_container.markdown(
                     f"<div style='background-color: #C8E6C9; padding: 25px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
                     f"<h1 style='margin: 0; color: #2E7D32;'>✅ Analisi completata!</h1>"
-                    f"<p style='margin: 15px 0; font-size: 1.4em; font-weight: bold;'>⏱️ Tempo totale: {total_time} secondi</p>"
+                    f"<p style='margin: 15px 0; font-size: 1.4em; font-weight: bold; color: #2E7D32;'>⏱️ Tempo totale: {total_time} secondi</p>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -1668,7 +1668,7 @@ def render_step_3_results():
 
     # Mostra messaggio descrittivo sotto il box
     st.markdown(
-        f"<p style='text-align: center; font-size: 1.2em; margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 8px;'>{message}</p>",
+        f"<p style='text-align: center; font-size: 1.2em; margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 8px; color: #333333;'>{message}</p>",
         unsafe_allow_html=True
     )
 
@@ -1731,32 +1731,6 @@ def render_step_3_results():
         st.metric("✅ Risposte corrette (media)", summary['correct'])
     with col3:
         st.metric("❌ Risposte sbagliate (media)", summary['incorrect'])
-
-    st.markdown("---")
-
-    # Export PDF
-    st.markdown("### 📥 Scarica il Report")
-
-    try:
-        questions = get_all_questions()
-        pdf_buffer = generate_pdf_report(
-            brand_name,
-            summary,
-            st.session_state.eval_results,
-            questions,
-            st.session_state.user_answers,
-            st.session_state.ai_answers
-        )
-
-        st.download_button(
-            label="📄 Scarica Report PDF",
-            data=pdf_buffer,
-            file_name=f"brand_ai_integrity_{brand_name.lower().replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
-            mime="application/pdf",
-            type="primary"
-        )
-    except Exception as e:
-        st.error(f"Errore nella generazione del PDF: {str(e)}")
 
     st.markdown("---")
 
