@@ -1800,8 +1800,15 @@ def render_step_3_results():
     st.markdown("---")
     st.markdown("### 📧 Vuoi migliorare la tua Brand AI Integrity?")
 
+    mailto_url = (
+        "mailto:info@avantgrade.com"
+        "?subject=Interesse%20Brand%20AI%20Integrity"
+        "&body=Ciao%2C%0A%0A"
+        "ho%20usato%20il%20Brand%20AI%20Integrity%20Tool%20e%20vorrei%20saperne%20di%20pi%C3%B9%20su%20come%20migliorare%20la%20presenza%20del%20mio%20brand%20nelle%20AI.%0A%0A"
+        "Grazie!"
+    )
     st.markdown(
-        """
+        f"""
         <div style='background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
                     padding: 30px;
                     border-radius: 15px;
@@ -1815,41 +1822,13 @@ def render_step_3_results():
                 Il Team Innovation di AvantGrade può aiutarti a ottimizzare la rappresentazione del tuo brand
                 nelle intelligenze artificiali e migliorare il tuo Brand AI Integrity Score.
             </p>
+            <a href="{mailto_url}" style="color: white; font-size: 1.2em; font-weight: bold;">
+                📧 Contatta info@avantgrade.com
+            </a>
         </div>
         """,
         unsafe_allow_html=True
     )
-
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        mailto_url = (
-            "mailto:info@avantgrade.com"
-            "?subject=Interesse%20Brand%20AI%20Integrity"
-            "&body=Ciao%2C%0A%0A"
-            "ho%20usato%20il%20Brand%20AI%20Integrity%20Tool%20e%20vorrei%20saperne%20di%20pi%C3%B9%20su%20come%20migliorare%20la%20presenza%20del%20mio%20brand%20nelle%20AI.%0A%0A"
-            "Grazie!"
-        )
-        st.markdown(
-            f"""
-            <a href="{mailto_url}" target="_blank" style="
-                display: block;
-                text-align: center;
-                background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
-                color: white;
-                padding: 15px 30px;
-                border-radius: 10px;
-                text-decoration: none;
-                font-size: 1.2em;
-                font-weight: bold;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.15);
-                transition: transform 0.2s, box-shadow 0.2s;
-            " onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.2)';"
-               onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.15)';">
-                📧 Contatta AvantGrade.com
-            </a>
-            """,
-            unsafe_allow_html=True
-        )
 
 
 def main():
