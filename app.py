@@ -819,6 +819,87 @@ Schema JSON:
         return None, f"Errore valutazione: {str(e)}"
 
 
+def evaluate_batch(_model: genai.GenerativeModel, question: str, ai_answers: Dict[str, str], user_answer: str, retry: bool = False) -> Tuple[Optional[Dict[str, Dict]], Optional[str]]:
+    """
+    Valuta tutte le risposte AI per una domanda in una singola chiamata.
+    Riduce le chiamate API da 3 per domanda a 1.
+    """
+    ai_models_in = list(ai_answers.keys())
+    if not ai_models_in:
+        return {}, None
+
+    answers_block = ""
+    for ai_name in ai_models_in:
+        display_name = {"gemini": "Gemini", "openai": "ChatGPT", "claude": "Claude"}.get(ai_name, ai_name)
+        answers_block += f"\nRisposta {display_name}:\n{ai_answers[ai_name]}\n"
+
+    try:
+        prompt = f"""Valuta la coerenza tra le risposte AI e la risposta ground truth (utente).
+Le risposte possono contenere elenchi puntati o testo su più righe.
+
+Domanda: {question}
+{answers_block}
+Risposta ground truth (utente):
+{user_answer}
+
+Criteri di valutazione:
+- "corretta" (score >= 0.75) se semanticamente allineata alla ground truth e non contraddice
+- "sbagliata" (score < 0.75) se contraddice, oppure aggiunge affermazioni specifiche incompatibili, oppure manca elementi essenziali quando la ground truth li indica chiaramente
+
+{"IMPORTANTE: Genera SOLO JSON valido. Ogni 'reason' deve essere una SINGOLA frase breve (max 100 caratteri)." if retry else ""}
+
+Restituisci un oggetto JSON con questa struttura (una entry per ogni AI):
+{{
+  {', '.join(f'"{name}": {{"score": 0.85, "is_correct": true, "reason": "Breve spiegazione", "key_conflicts": []}}' for name in ai_models_in)}
+}}
+
+Schema per ogni AI:
+- score: numero decimale da 0.0 a 1.0 (allineamento semantico)
+- is_correct: booleano true se score >= {MATCH_THRESHOLD}, altrimenti false
+- reason: stringa breve (max 100 caratteri, 1 frase senza a capo)
+- key_conflicts: array di stringhe (max 3 elementi, può essere vuoto [])
+"""
+
+        response = _model.generate_content(prompt)
+
+        if not response or not response.text:
+            return None, "Risposta vuota dall'evaluator"
+
+        response_text = response.text.strip()
+
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            response_text = "\n".join(lines[1:-1]) if len(lines) > 2 else response_text
+            response_text = response_text.replace("```json", "").replace("```", "").strip()
+
+        response_text = response_text.strip()
+
+        try:
+            batch_result = json.loads(response_text)
+
+            results = {}
+            for ai_name in ai_models_in:
+                if ai_name in batch_result:
+                    r = batch_result[ai_name]
+                    r["score"] = float(r.get("score", 0))
+                    r["is_correct"] = bool(r.get("is_correct", False))
+                    if isinstance(r.get("reason"), str):
+                        r["reason"] = r["reason"].replace("\n", " ").strip()
+                    if "key_conflicts" not in r:
+                        r["key_conflicts"] = []
+                    results[ai_name] = r
+
+            return results, None
+
+        except json.JSONDecodeError as e:
+            if not retry:
+                return evaluate_batch(_model, question, ai_answers, user_answer, retry=True)
+            return None, f"Errore parsing JSON batch: {str(e)}\nRisposta: {response_text[:300]}"
+
+    except Exception as e:
+        return None, f"Errore valutazione batch: {str(e)}"
+
+
 def render_section_a():
     """Sezione A: Setup - Brand name, domande e risposte."""
     st.header("Sezione A: Setup e Risposte")
@@ -1422,8 +1503,8 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
         # Bottone per generare e calcolare tutto insieme
         if st.button("🚀 Analizza con le AI e Calcola Brand Integrity", type="primary"):
             with st.spinner("🔄 Analisi in corso..."):
-                # Stima tempo: ~6 secondi per domanda x 3 AI + 3 secondi valutazione
-                estimated_time = len(questions) * 20  # secondi stimati
+                # Stima tempo: ~6 secondi per domanda x 3 AI + ~5 secondi valutazione batch
+                estimated_time = len(questions) * 12  # secondi stimati
 
                 # Container per il timer
                 timer_container = st.empty()
@@ -1510,7 +1591,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                         st.session_state.ai_answers[idx]["claude"] = claude_answer
                     current_step_count += 1
 
-                # Step 2: Valuta risposte
+                # Step 2: Valuta risposte (batch: 1 chiamata per domanda invece di 3)
                 elapsed = int(time.time() - start_time)
                 remaining = max(0, estimated_time - elapsed)
                 timer_container.markdown(
@@ -1524,30 +1605,41 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 st.session_state.eval_results = {}
 
                 ai_models = ["gemini", "openai", "claude"]
-                total_evals = len(st.session_state.ai_answers) * len(ai_models)
+                total_evals = len(st.session_state.ai_answers)
                 current_eval = 0
 
                 for idx in sorted(st.session_state.ai_answers.keys()):
                     question = questions[idx].replace("{BRAND_NAME}", brand_name)
-                    ai_answers = st.session_state.ai_answers[idx]
+                    ai_answers_for_q = st.session_state.ai_answers[idx]
                     user_answer = st.session_state.user_answers[idx]
+
+                    progress_bar.progress(0.5 + (current_eval / total_evals / 2))
+                    status_text.text(f"📊 Valutazione domanda {idx + 1}/{total_evals}...")
+
+                    # Batch: valuta tutte le AI in una singola chiamata
+                    batch_results, batch_error = evaluate_batch(evaluator_model, question, ai_answers_for_q, user_answer)
 
                     st.session_state.eval_results[idx] = {}
                     scores = []
 
-                    for ai_name in ai_models:
-                        if ai_name in ai_answers:
-                            progress_bar.progress(0.5 + (current_eval / total_evals / 2))
+                    if batch_error:
+                        errors.append(f"Eval Q{idx + 1}: {batch_error}")
+                        # Fallback: valuta singolarmente
+                        for ai_name in ai_models:
+                            if ai_name in ai_answers_for_q:
+                                result, error = evaluate_answer(evaluator_model, question, ai_answers_for_q[ai_name], user_answer)
+                                if error:
+                                    errors.append(f"Eval Q{idx + 1} ({ai_name}): {error}")
+                                else:
+                                    st.session_state.eval_results[idx][ai_name] = result
+                                    scores.append(result['score'])
+                    else:
+                        for ai_name in ai_models:
+                            if ai_name in batch_results:
+                                st.session_state.eval_results[idx][ai_name] = batch_results[ai_name]
+                                scores.append(batch_results[ai_name]['score'])
 
-                            result, error = evaluate_answer(evaluator_model, question, ai_answers[ai_name], user_answer)
-
-                            if error:
-                                errors.append(f"Eval Q{idx + 1} ({ai_name}): {error}")
-                            else:
-                                st.session_state.eval_results[idx][ai_name] = result
-                                scores.append(result['score'])
-
-                            current_eval += 1
+                    current_eval += 1
 
                     # Average score
                     if scores:
