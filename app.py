@@ -1529,22 +1529,17 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
         # Bottone per generare e calcolare tutto insieme
         if st.button("🚀 Analizza con le AI e Calcola Brand Integrity", type="primary"):
             with st.spinner("🔄 Analisi in corso..."):
-                # Stima tempo: ~6 secondi per domanda x 3 AI + ~5 secondi valutazione batch
-                estimated_time = len(questions) * 12  # secondi stimati
-
-                # Container per il timer
+                # Container per il messaggio di stato
                 timer_container = st.empty()
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
-                start_time = time.time()
-
-                # Mostra stima iniziale
+                # Mostra messaggio di attesa
                 timer_container.markdown(
-                    f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
-                    f"<h2 style='margin: 0; color: #1976D2;'>⏱️ Analisi in corso...</h2>"
-                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #1976D2;'>Tempo stimato: ~{estimated_time} secondi</p>"
-                    f"</div>",
+                    "<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
+                    "<h2 style='margin: 0; color: #1976D2;'>Analisi in corso...</h2>"
+                    "<p style='margin: 10px 0; font-size: 1.1em; color: #1976D2;'>Stiamo elaborando la tua richiesta, ti chiediamo di attendere qualche minuto e non uscire da questa pagina.</p>"
+                    "</div>",
                     unsafe_allow_html=True
                 )
 
@@ -1558,12 +1553,10 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     st.session_state.ai_answers[idx] = {}
 
                     # Gemini
-                    elapsed = int(time.time() - start_time)
-                    remaining = max(0, estimated_time - elapsed)
                     timer_container.markdown(
                         f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
-                        f"<h2 style='margin: 0; color: #1976D2;'>⚫ Gemini - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #1976D2;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"<h2 style='margin: 0; color: #1976D2;'>Gemini - Domanda {idx + 1}/{len(questions)}</h2>"
+                        f"<p style='margin: 10px 0; font-size: 1.1em; color: #1976D2;'>Stiamo elaborando la tua richiesta, ti chiediamo di attendere qualche minuto e non uscire da questa pagina.</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1578,12 +1571,10 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     current_step_count += 1
 
                     # ChatGPT
-                    elapsed = int(time.time() - start_time)
-                    remaining = max(0, estimated_time - elapsed)
                     timer_container.markdown(
                         f"<div style='background-color: #E8F5E9; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
-                        f"<h2 style='margin: 0; color: #2E7D32;'>🟢 ChatGPT - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #2E7D32;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"<h2 style='margin: 0; color: #2E7D32;'>ChatGPT - Domanda {idx + 1}/{len(questions)}</h2>"
+                        f"<p style='margin: 10px 0; font-size: 1.1em; color: #2E7D32;'>Stiamo elaborando la tua richiesta, ti chiediamo di attendere qualche minuto e non uscire da questa pagina.</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1598,12 +1589,10 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     current_step_count += 1
 
                     # Claude
-                    elapsed = int(time.time() - start_time)
-                    remaining = max(0, estimated_time - elapsed)
                     timer_container.markdown(
                         f"<div style='background-color: #F3E5F5; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #7B1FA2;'>"
-                        f"<h2 style='margin: 0; color: #7B1FA2;'>🟣 Claude - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #7B1FA2;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"<h2 style='margin: 0; color: #7B1FA2;'>Claude - Domanda {idx + 1}/{len(questions)}</h2>"
+                        f"<p style='margin: 10px 0; font-size: 1.1em; color: #7B1FA2;'>Stiamo elaborando la tua richiesta, ti chiediamo di attendere qualche minuto e non uscire da questa pagina.</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1618,13 +1607,11 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     current_step_count += 1
 
                 # Step 2: Valuta risposte (batch: 1 chiamata per domanda invece di 3)
-                elapsed = int(time.time() - start_time)
-                remaining = max(0, estimated_time - elapsed)
                 timer_container.markdown(
-                    f"<div style='background-color: #FFF3E0; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #E65100;'>"
-                    f"<h2 style='margin: 0; color: #E65100;'>📊 Valutazione risposte in corso...</h2>"
-                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #E65100;'>⏱️ Tempo trascorso: {elapsed}s | Quasi finito!</p>"
-                    f"</div>",
+                    "<div style='background-color: #FFF3E0; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #E65100;'>"
+                    "<h2 style='margin: 0; color: #E65100;'>Valutazione risposte in corso...</h2>"
+                    "<p style='margin: 10px 0; font-size: 1.1em; color: #E65100;'>Stiamo elaborando la tua richiesta, ti chiediamo di attendere qualche minuto e non uscire da questa pagina.</p>"
+                    "</div>",
                     unsafe_allow_html=True
                 )
                 status_text.text("Valutando le risposte con AI evaluator...")
@@ -1711,15 +1698,11 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
                 progress_bar.progress(1.0)
 
-                # Calcola tempo totale
-                total_time = int(time.time() - start_time)
-
-                # Mostra messaggio finale con tempo
+                # Mostra messaggio finale
                 timer_container.markdown(
-                    f"<div style='background-color: #C8E6C9; padding: 25px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
-                    f"<h1 style='margin: 0; color: #2E7D32;'>✅ Analisi completata!</h1>"
-                    f"<p style='margin: 15px 0; font-size: 1.4em; font-weight: bold; color: #2E7D32;'>⏱️ Tempo totale: {total_time} secondi</p>"
-                    f"</div>",
+                    "<div style='background-color: #C8E6C9; padding: 25px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
+                    "<h1 style='margin: 0; color: #2E7D32;'>Analisi completata!</h1>"
+                    "</div>",
                     unsafe_allow_html=True
                 )
 
