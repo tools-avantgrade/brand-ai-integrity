@@ -112,7 +112,7 @@ def configure_ai_models() -> Tuple[Optional[genai.GenerativeModel], Optional[Ope
         gemini_api_key = get_secret("GEMINI_API_KEY")
         genai.configure(api_key=gemini_api_key)
 
-        gemini_model_name = get_secret("GEMINI_MODEL", "gemini-3-flash-preview")
+        gemini_model_name = get_secret("GEMINI_MODEL", "gemini-2.0-flash")
         evaluator_model_name = get_secret("EVALUATOR_MODEL", gemini_model_name)
 
         # Config per modello di generazione - aumentato token limit
@@ -1761,7 +1761,7 @@ def render_step_3_results():
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("**⚫ Gemini**")
-        st.caption(f"Modello: {get_secret('GEMINI_MODEL', 'gemini-3-flash-preview')}")
+        st.caption(f"Modello: {get_secret('GEMINI_MODEL', 'gemini-2.0-flash')}")
     with col2:
         st.markdown("**🟢 ChatGPT**")
         st.caption(f"Modello: {get_secret('OPENAI_MODEL', 'gpt-4o-mini')}")
