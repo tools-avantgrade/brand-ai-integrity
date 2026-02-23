@@ -12,6 +12,7 @@ from anthropic import Anthropic
 import requests
 import json
 import time
+import os
 from typing import Dict, List, Optional, Tuple
 from io import BytesIO
 from reportlab.lib import colors
@@ -65,32 +66,41 @@ def get_all_questions():
     return DEFAULT_QUESTIONS + st.session_state.custom_questions
 
 
+def get_secret(key: str, default: str = None) -> Optional[str]:
+    """Legge un secret da st.secrets (secrets.toml) oppure da variabili d'ambiente (Railway/deploy)."""
+    try:
+        value = st.secrets[key]
+        if value:
+            return value
+    except (KeyError, FileNotFoundError):
+        pass
+    return os.environ.get(key, default)
+
+
 def check_secrets() -> Tuple[bool, Optional[str]]:
     """Verifica che i secrets necessari siano configurati."""
     try:
         # Verifica Gemini API Key
-        gemini_key = st.secrets["GEMINI_API_KEY"]
+        gemini_key = get_secret("GEMINI_API_KEY")
         if not gemini_key or gemini_key == "YOUR_GEMINI_API_KEY_HERE":
-            return False, "GEMINI_API_KEY non configurata correttamente in secrets.toml"
+            return False, "GEMINI_API_KEY non configurata (secrets.toml o variabile d'ambiente)"
 
         # Verifica OpenAI API Key
-        openai_key = st.secrets["OPENAI_API_KEY"]
+        openai_key = get_secret("OPENAI_API_KEY")
         if not openai_key or openai_key == "YOUR_OPENAI_API_KEY_HERE":
-            return False, "OPENAI_API_KEY non configurata correttamente in secrets.toml"
+            return False, "OPENAI_API_KEY non configurata (secrets.toml o variabile d'ambiente)"
 
         # Verifica Anthropic API Key
-        anthropic_key = st.secrets["ANTHROPIC_API_KEY"]
+        anthropic_key = get_secret("ANTHROPIC_API_KEY")
         if not anthropic_key or anthropic_key == "YOUR_ANTHROPIC_API_KEY_HERE":
-            return False, "ANTHROPIC_API_KEY non configurata correttamente in secrets.toml"
+            return False, "ANTHROPIC_API_KEY non configurata (secrets.toml o variabile d'ambiente)"
 
         # Verifica Brave Search API Key (per web search - GRATIS, no limiti)
-        brave_key = st.secrets["BRAVE_API_KEY"]
+        brave_key = get_secret("BRAVE_API_KEY")
         if not brave_key or brave_key == "YOUR_BRAVE_API_KEY_HERE":
-            return False, "BRAVE_API_KEY non configurata correttamente in secrets.toml"
+            return False, "BRAVE_API_KEY non configurata (secrets.toml o variabile d'ambiente)"
 
         return True, None
-    except KeyError as e:
-        return False, f"Chiave API mancante in secrets.toml: {str(e)}"
     except Exception as e:
         return False, f"Errore nel leggere secrets: {str(e)}"
 
@@ -99,11 +109,11 @@ def configure_ai_models() -> Tuple[Optional[genai.GenerativeModel], Optional[Ope
     """Configura tutti i modelli AI (Gemini, OpenAI, Claude) e l'evaluator."""
     try:
         # Configura Gemini
-        gemini_api_key = st.secrets["GEMINI_API_KEY"]
+        gemini_api_key = get_secret("GEMINI_API_KEY")
         genai.configure(api_key=gemini_api_key)
 
-        gemini_model_name = st.secrets.get("GEMINI_MODEL", "gemini-3-flash-preview")
-        evaluator_model_name = st.secrets.get("EVALUATOR_MODEL", gemini_model_name)
+        gemini_model_name = get_secret("GEMINI_MODEL", "gemini-3-flash-preview")
+        evaluator_model_name = get_secret("EVALUATOR_MODEL", gemini_model_name)
 
         # Config per modello di generazione - aumentato token limit
         generation_config = {
@@ -144,10 +154,10 @@ def configure_ai_models() -> Tuple[Optional[genai.GenerativeModel], Optional[Ope
         )
 
         # Configura OpenAI
-        openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        openai_client = OpenAI(api_key=get_secret("OPENAI_API_KEY"))
 
         # Configura Anthropic (Claude)
-        anthropic_client = Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+        anthropic_client = Anthropic(api_key=get_secret("ANTHROPIC_API_KEY"))
 
         return gemini_model, openai_client, anthropic_client, evaluator_model, None
     except Exception as e:
@@ -190,7 +200,7 @@ def web_search(query: str, max_results: int = 10) -> Tuple[str, bool]:
         Tupla (risultati formattati, successo)
     """
     try:
-        brave_key = st.secrets.get("BRAVE_API_KEY", "")
+        brave_key = get_secret("BRAVE_API_KEY", "")
         if not brave_key:
             return "Brave API key non configurata.", False
 
@@ -626,7 +636,7 @@ def generate_openai_answer(_client: OpenAI, brand_name: str, question: str) -> T
     """Genera risposta da ChatGPT con ricerca web REALE (Brave Search)."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
-        openai_model = st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")
+        openai_model = get_secret("OPENAI_MODEL", "gpt-4o-mini")
 
         # Ricerca web con Brave (stessa API usata da ChatGPT)
         search_query = f"{brand_name} {final_question}"
@@ -677,7 +687,7 @@ def generate_claude_answer(_client: Anthropic, brand_name: str, question: str) -
     """Genera risposta da Claude con ricerca web REALE (Brave Search)."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
-        claude_model = st.secrets.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+        claude_model = get_secret("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 
         # Ricerca web con Brave (stessa qualità delle app AI)
         search_query = f"{brand_name} {final_question}"
@@ -1627,13 +1637,13 @@ def render_step_3_results():
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("**⚫ Gemini**")
-        st.caption(f"Modello: {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}")
+        st.caption(f"Modello: {get_secret('GEMINI_MODEL', 'gemini-3-flash-preview')}")
     with col2:
         st.markdown("**🟢 ChatGPT**")
-        st.caption(f"Modello: {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}")
+        st.caption(f"Modello: {get_secret('OPENAI_MODEL', 'gpt-4o-mini')}")
     with col3:
         st.markdown("**🟣 Claude**")
-        st.caption(f"Modello: {st.secrets.get('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929')}")
+        st.caption(f"Modello: {get_secret('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929')}")
 
     st.markdown("---")
 
