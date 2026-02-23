@@ -150,7 +150,8 @@ def configure_ai_models() -> Tuple[Optional[genai.GenerativeModel], Optional[Ope
 
         evaluator_model = genai.GenerativeModel(
             model_name=evaluator_model_name,
-            generation_config=evaluator_config
+            generation_config=evaluator_config,
+            safety_settings=safety_settings
         )
 
         # Configura OpenAI
@@ -604,7 +605,10 @@ IMPORTANTE:
 
 Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."""
 
-        response = _model.generate_content(prompt)
+        response = _model.generate_content(
+            prompt,
+            request_options={"timeout": 30}
+        )
 
         # Controlla se la risposta è stata bloccata dai safety filters
         if not response.candidates:
@@ -769,13 +773,24 @@ Schema JSON:
 - key_conflicts: array di stringhe (max 3 elementi, può essere vuoto [])
 """
 
-        response = _model.generate_content(prompt)
+        response = _model.generate_content(
+            prompt,
+            request_options={"timeout": 30}
+        )
 
-        if not response or not response.text:
-            return None, "Risposta vuota dall'evaluator"
+        if not response:
+            return None, "Risposta nulla dall'evaluator"
+
+        # Gestisci safety blocks
+        if not response.candidates:
+            return None, "Risposta bloccata dai safety filters"
+
+        candidate = response.candidates[0]
+        if not candidate.content or not candidate.content.parts:
+            return None, f"Risposta vuota (finish_reason: {candidate.finish_reason})"
 
         # Parsing JSON robusto
-        response_text = response.text.strip()
+        response_text = candidate.content.parts[0].text.strip()
 
         # Rimuovi markdown code blocks se presenti
         if response_text.startswith("```"):
@@ -860,12 +875,23 @@ Schema per ogni AI:
 - key_conflicts: array di stringhe (max 3 elementi, può essere vuoto [])
 """
 
-        response = _model.generate_content(prompt)
+        response = _model.generate_content(
+            prompt,
+            request_options={"timeout": 30}
+        )
 
-        if not response or not response.text:
-            return None, "Risposta vuota dall'evaluator"
+        if not response:
+            return None, "Risposta nulla dall'evaluator"
 
-        response_text = response.text.strip()
+        # Gestisci safety blocks
+        if not response.candidates:
+            return None, "Risposta bloccata dai safety filters"
+
+        candidate = response.candidates[0]
+        if not candidate.content or not candidate.content.parts:
+            return None, f"Risposta vuota dall'evaluator (finish_reason: {candidate.finish_reason})"
+
+        response_text = candidate.content.parts[0].text.strip()
 
         if response_text.startswith("```"):
             lines = response_text.split("\n")
@@ -1624,15 +1650,18 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
                     if batch_error:
                         errors.append(f"Eval Q{idx + 1}: {batch_error}")
-                        # Fallback: valuta singolarmente
+                        # Fallback: valuta singolarmente con try/except per non bloccare
                         for ai_name in ai_models:
                             if ai_name in ai_answers_for_q:
-                                result, error = evaluate_answer(evaluator_model, question, ai_answers_for_q[ai_name], user_answer)
-                                if error:
-                                    errors.append(f"Eval Q{idx + 1} ({ai_name}): {error}")
-                                else:
-                                    st.session_state.eval_results[idx][ai_name] = result
-                                    scores.append(result['score'])
+                                try:
+                                    result, error = evaluate_answer(evaluator_model, question, ai_answers_for_q[ai_name], user_answer)
+                                    if error:
+                                        errors.append(f"Eval Q{idx + 1} ({ai_name}): {error}")
+                                    else:
+                                        st.session_state.eval_results[idx][ai_name] = result
+                                        scores.append(result['score'])
+                                except Exception as e:
+                                    errors.append(f"Eval Q{idx + 1} ({ai_name}): timeout/errore - {str(e)[:100]}")
                     else:
                         for ai_name in ai_models:
                             if ai_name in batch_results:
@@ -1698,15 +1727,18 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 progress_bar.empty()
 
                 if errors:
-                    st.warning("⚠️ Alcuni errori durante l'elaborazione:")
-                    for err in errors[:5]:  # Mostra solo i primi 5
-                        st.text(err)
+                    with st.expander(f"⚠️ {len(errors)} errori durante l'elaborazione", expanded=True):
+                        for err in errors[:10]:
+                            st.text(err)
 
                 time.sleep(2)  # Mostra il messaggio di successo per 2 secondi
 
-                # Passa allo step 3
-                st.session_state.current_step = 3
-                st.rerun()
+                # Passa allo step 3 solo se abbiamo risultati
+                if st.session_state.eval_results:
+                    st.session_state.current_step = 3
+                    st.rerun()
+                else:
+                    st.error("❌ Nessun risultato di valutazione ottenuto. Controlla gli errori sopra e riprova.")
     else:
         st.info("Completa tutte le risposte per procedere con l'analisi")
 
