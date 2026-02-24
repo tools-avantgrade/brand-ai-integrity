@@ -1518,7 +1518,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 value=st.session_state.user_answers.get(idx, ""),
                 key=f"user_answer_{idx}",
                 height=100,
-                placeholder="Scrivi qui la risposta esatta per il tuo brand (il campo si salva automaticamente quando esci dal campo)..."
+                placeholder="Scrivi qui la risposta corretta per il tuo brand..."
             )
 
             st.session_state.user_answers[idx] = user_answer
@@ -1541,6 +1541,12 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
+                start_time = time.time()
+                estimated_time = len(questions) * 20  # ~20s per domanda
+                est_min = estimated_time // 60
+                est_sec = estimated_time % 60
+                est_label = f"~{est_min}m {est_sec}s" if est_min > 0 else f"~{est_sec}s"
+
                 # Mostra messaggio di attesa
                 timer_container.markdown(
                     f"<div style='background:#0277BD; padding:22px; border-radius:12px; text-align:center; margin:15px 0;'>"
@@ -1559,6 +1565,12 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
                 for idx, question in enumerate(questions):
                     st.session_state.ai_answers[idx] = {}
+
+                    elapsed = int(time.time() - start_time)
+                    remaining = max(0, estimated_time - elapsed)
+                    rem_min = remaining // 60
+                    rem_sec = remaining % 60
+                    rem_label = f"{rem_min}m {rem_sec}s" if rem_min > 0 else f"{rem_sec}s"
 
                     # Gemini
                     timer_container.markdown(
@@ -1579,6 +1591,12 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                         st.session_state.ai_answers[idx]["gemini"] = gemini_answer
                     current_step_count += 1
 
+                    elapsed = int(time.time() - start_time)
+                    remaining = max(0, estimated_time - elapsed)
+                    rem_min = remaining // 60
+                    rem_sec = remaining % 60
+                    rem_label = f"{rem_min}m {rem_sec}s" if rem_min > 0 else f"{rem_sec}s"
+
                     # ChatGPT
                     timer_container.markdown(
                         f"<div style='background:#1B5E20; padding:20px; border-radius:12px; text-align:center; margin:15px 0;'>"
@@ -1597,6 +1615,12 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     else:
                         st.session_state.ai_answers[idx]["openai"] = openai_answer
                     current_step_count += 1
+
+                    elapsed = int(time.time() - start_time)
+                    remaining = max(0, estimated_time - elapsed)
+                    rem_min = remaining // 60
+                    rem_sec = remaining % 60
+                    rem_label = f"{rem_min}m {rem_sec}s" if rem_min > 0 else f"{rem_sec}s"
 
                     # Claude
                     timer_container.markdown(
@@ -1709,6 +1733,8 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     }
 
                 progress_bar.progress(1.0)
+
+                total_time = int(time.time() - start_time)
 
                 # Mostra messaggio finale
                 timer_container.markdown(
@@ -1975,31 +2001,6 @@ def main():
     # Logo AvantGrade fisso + CSS (tema scuro gestito da config.toml)
     st.markdown("""
 <style>
-/* Spazio per non coprire il contenuto con il logo fisso */
-.main .block-container {
-    padding-top: 90px !important;
-}
-
-/* ===== LOGO AVANTGRADE — FISSO IN ALTO A SINISTRA ===== */
-#avantgrade-fixed-logo {
-    position: fixed;
-    top: 50px;
-    left: 14px;
-    z-index: 9999;
-    padding: 9px 18px;
-    border-radius: 12px;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    background: rgba(16, 18, 30, 0.92);
-    border: 1.5px solid rgba(255, 255, 255, 0.10);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
-}
-#avantgrade-fixed-logo img {
-    height: 54px;
-    width: auto;
-    display: block;
-}
-
 /* ===== BOTTONE PRIMARIO — ARANCIONE AVANTGRADE ===== */
 .stButton > button[kind="primary"] {
     background-color: #E87722 !important;
@@ -2044,10 +2045,6 @@ def main():
 }
 </style>
 
-<div id="avantgrade-fixed-logo">
-  <img src="https://www.avantgrade.com/wp-content/uploads/2024/11/Logo_avantgrade_colori.png"
-       alt="AvantGrade" />
-</div>
 """, unsafe_allow_html=True)
 
     # Header
