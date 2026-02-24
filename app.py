@@ -26,12 +26,12 @@ from datetime import datetime
 # Configurazione
 MATCH_THRESHOLD = 0.75
 DEFAULT_QUESTIONS = [
-    "Quali sono i principali prodotti/servizi offerti da {BRAND_NAME}?",
-    "In che settore opera {BRAND_NAME}?",
-    "Qual è il pubblico target principale di {BRAND_NAME}?",
-    "{BRAND_NAME} ha sedi operative? Dove?",
-    "Quali sono i canali social ufficiali del brand {BRAND_NAME}? (ad esempio linkedin, instagram)",
-    "Quali sono i contatti del brand {BRAND_NAME}? (Ad es. inserisci il numero di telefono, pagine contatto del sito)"
+    "Quali sono i principali prodotti o servizi offerti da {BRAND_NAME} in Italia?",
+    "Dov'è situata la sede principale operativa in Italia del brand {BRAND_NAME}?",
+    "Qual è il pubblico target principale di {BRAND_NAME} in Italia? (es. fascia di età, settore professionale, tipo di cliente)",
+    "Qual è il principale canale social ufficiale del brand {BRAND_NAME} in Italia? (indica il link o username ufficiale — es. LinkedIn, Instagram, Facebook)",
+    "Qual è il numero di telefono principale per contattare {BRAND_NAME} in Italia?",
+    "Qual è il sito web ufficiale di {BRAND_NAME} in Italia e la pagina di contatto diretta?"
 ]
 MIN_QUESTIONS = 3
 MAX_QUESTIONS = 10
@@ -739,8 +739,11 @@ Risposta ground truth (utente):
 {user_answer}
 
 Criteri di valutazione:
-- "corretta" (score >= 0.75) se semanticamente allineata alla ground truth e non contraddice
-- "sbagliata" (score < 0.75) se contraddice, oppure aggiunge affermazioni specifiche incompatibili, oppure manca elementi essenziali quando la ground truth li indica chiaramente
+- "corretta" (score >= 0.75) se semanticamente allineata alla ground truth, non contraddice e non aggiunge troppe informazioni extra non presenti nella ground truth
+- "parziale" (score 0.5-0.74) se le informazioni principali sono corrette MA la risposta AI aggiunge molti dettagli specifici, numeri, nomi o affermazioni che vanno ben oltre quanto indicato nella ground truth (risposta eccessivamente verbose o ricca di dettagli non verificabili). Penalizza proporzionalmente in base alla quantità di informazioni estranee.
+- "sbagliata" (score < 0.5) se contraddice la ground truth, oppure manca elementi essenziali quando la ground truth li indica chiaramente
+
+IMPORTANTE SU ECCESSIVA VERBOSITÀ: Se la risposta AI è molto più lunga della ground truth e aggiunge molti dettagli specifici (indirizzi precisi, numeri, date, nomi di persone, servizi non menzionati), riduci il punteggio di 0.10-0.25 rispetto a quanto varrebbe se fosse solo corretta, anche se non contraddice direttamente.
 
 {"IMPORTANTE: Genera SOLO JSON valido. Il campo 'reason' deve essere una SINGOLA frase breve (max 100 caratteri)." if retry else ""}
 
@@ -1332,30 +1335,34 @@ def render_step_1_brand():
     """Step 1: Inserimento brand name."""
     st.subheader("Step 1: Inserisci il nome del tuo Brand")
 
+    def _on_brand_change():
+        new_val = st.session_state.brand_input
+        if new_val != st.session_state.brand_name:
+            st.session_state.brand_name = new_val
+            st.session_state.ai_answers = {}
+            st.session_state.user_answers = {}
+            st.session_state.eval_results = {}
+            st.session_state.summary = None
+
     brand_name = st.text_input(
         "Nome del Brand",
         value=st.session_state.brand_name,
         placeholder="es. Nike, Apple, AvantGrade...",
-        help="Inserisci il nome del brand da analizzare",
-        key="brand_input"
+        help="Inizia a digitare — il campo si aggiorna automaticamente",
+        key="brand_input",
+        on_change=_on_brand_change
     )
-
-    if brand_name and brand_name != st.session_state.brand_name:
-        st.session_state.brand_name = brand_name
-        # Reset quando cambia brand
-        st.session_state.ai_answers = {}
-        st.session_state.user_answers = {}
-        st.session_state.eval_results = {}
-        st.session_state.summary = None
+    brand_name = st.session_state.brand_name  # usa il valore aggiornato
 
     if brand_name:
         st.success(f"✓ Brand selezionato: **{brand_name}**")
+        st.caption("Puoi proseguire cliccando il pulsante qui sotto.")
 
         if st.button("Continua →", type="primary"):
             st.session_state.current_step = 2
             st.rerun()
     else:
-        st.info("Inserisci il nome del brand per continuare")
+        st.info("Digita il nome del brand nel campo sopra per continuare")
 
 
 def render_step_2_questions_answers(gemini_model, openai_client, anthropic_client, evaluator_model):
@@ -1394,7 +1401,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 value=st.session_state.user_answers.get(idx, ""),
                 key=f"user_answer_{idx}",
                 height=100,
-                placeholder="Inserisci la risposta corretta secondo il tuo brand..."
+                placeholder="Scrivi qui la risposta esatta per il tuo brand (il campo si salva automaticamente quando esci dal campo)..."
             )
 
             st.session_state.user_answers[idx] = user_answer
@@ -1422,11 +1429,17 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
                 start_time = time.time()
 
+                # Calcola minuti e secondi per la stima iniziale
+                est_min = estimated_time // 60
+                est_sec = estimated_time % 60
+                est_label = f"~{est_min} minuto{'i' if est_min != 1 else ''} e {est_sec} secondi" if est_min > 0 else f"~{est_sec} secondi"
+
                 # Mostra stima iniziale
                 timer_container.markdown(
-                    f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
-                    f"<h2 style='margin: 0; color: #1976D2;'>⏱️ Analisi in corso...</h2>"
-                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #1976D2;'>Tempo stimato: ~{estimated_time} secondi</p>"
+                    f"<div style='background-color: #1a2a3f; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
+                    f"<h2 style='margin: 0; color: #90caf9;'>⏱️ Analisi in corso...</h2>"
+                    f"<p style='margin: 10px 0; font-size: 1.2em; font-weight: bold; color: #90caf9;'>Mancano circa {est_label} al completamento dell'analisi</p>"
+                    f"<p style='margin: 0; font-size: 0.95em; color: #aaaacc;'>⚠️ Non chiudere questa finestra mentre l'analisi è in corso</p>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -1443,10 +1456,14 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     # Gemini
                     elapsed = int(time.time() - start_time)
                     remaining = max(0, estimated_time - elapsed)
+                    rem_min = remaining // 60
+                    rem_sec = remaining % 60
+                    rem_label = f"{rem_min}m {rem_sec}s" if rem_min > 0 else f"{rem_sec}s"
                     timer_container.markdown(
-                        f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
-                        f"<h2 style='margin: 0; color: #1976D2;'>⚫ Gemini - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #1976D2;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"<div style='background-color: #1a2a3f; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
+                        f"<h2 style='margin: 0; color: #90caf9;'>⚫ Gemini - Domanda {idx + 1}/{len(questions)}</h2>"
+                        f"<p style='margin: 10px 0; font-size: 1.2em; font-weight: bold; color: #90caf9;'>Mancano circa {rem_label} al completamento dell'analisi</p>"
+                        f"<p style='margin: 0; font-size: 0.9em; color: #aaaacc;'>⚠️ Non chiudere questa finestra</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1463,10 +1480,14 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     # ChatGPT
                     elapsed = int(time.time() - start_time)
                     remaining = max(0, estimated_time - elapsed)
+                    rem_min = remaining // 60
+                    rem_sec = remaining % 60
+                    rem_label = f"{rem_min}m {rem_sec}s" if rem_min > 0 else f"{rem_sec}s"
                     timer_container.markdown(
-                        f"<div style='background-color: #E8F5E9; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
-                        f"<h2 style='margin: 0; color: #2E7D32;'>🟢 ChatGPT - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #2E7D32;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"<div style='background-color: #1a2e1f; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
+                        f"<h2 style='margin: 0; color: #a5d6a7;'>🟢 ChatGPT - Domanda {idx + 1}/{len(questions)}</h2>"
+                        f"<p style='margin: 10px 0; font-size: 1.2em; font-weight: bold; color: #a5d6a7;'>Mancano circa {rem_label} al completamento dell'analisi</p>"
+                        f"<p style='margin: 0; font-size: 0.9em; color: #aaaacc;'>⚠️ Non chiudere questa finestra</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1483,10 +1504,14 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     # Claude
                     elapsed = int(time.time() - start_time)
                     remaining = max(0, estimated_time - elapsed)
+                    rem_min = remaining // 60
+                    rem_sec = remaining % 60
+                    rem_label = f"{rem_min}m {rem_sec}s" if rem_min > 0 else f"{rem_sec}s"
                     timer_container.markdown(
-                        f"<div style='background-color: #F3E5F5; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #7B1FA2;'>"
-                        f"<h2 style='margin: 0; color: #7B1FA2;'>🟣 Claude - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #7B1FA2;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"<div style='background-color: #2a1a3a; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #7B1FA2;'>"
+                        f"<h2 style='margin: 0; color: #ce93d8;'>🟣 Claude - Domanda {idx + 1}/{len(questions)}</h2>"
+                        f"<p style='margin: 10px 0; font-size: 1.2em; font-weight: bold; color: #ce93d8;'>Mancano circa {rem_label} al completamento dell'analisi</p>"
+                        f"<p style='margin: 0; font-size: 0.9em; color: #aaaacc;'>⚠️ Non chiudere questa finestra</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1504,9 +1529,10 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 elapsed = int(time.time() - start_time)
                 remaining = max(0, estimated_time - elapsed)
                 timer_container.markdown(
-                    f"<div style='background-color: #FFF3E0; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #E65100;'>"
-                    f"<h2 style='margin: 0; color: #E65100;'>📊 Valutazione risposte in corso...</h2>"
-                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #E65100;'>⏱️ Tempo trascorso: {elapsed}s | Quasi finito!</p>"
+                    f"<div style='background-color: #2e2200; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #E65100;'>"
+                    f"<h2 style='margin: 0; color: #ffe082;'>📊 Valutazione risposte in corso...</h2>"
+                    f"<p style='margin: 10px 0; font-size: 1.2em; font-weight: bold; color: #ffe082;'>Quasi finito! Calcolo del punteggio finale...</p>"
+                    f"<p style='margin: 0; font-size: 0.9em; color: #aaaacc;'>⚠️ Non chiudere questa finestra</p>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -1842,9 +1868,142 @@ def main():
     # Init session state
     init_session_state()
 
+    # CSS Tema Scuro Fisso + Logo AvantGrade fisso in alto a sinistra
+    st.markdown("""
+<style>
+/* ===== TEMA SCURO FISSO ===== */
+html, body, [data-testid="stApp"], .stApp {
+    background-color: #0e1117 !important;
+    color: #e0e0e0 !important;
+}
+.main .block-container {
+    background-color: #0e1117 !important;
+    padding-top: 80px !important;
+}
+[data-testid="stSidebar"] {
+    background-color: #1a1a2e !important;
+}
+p, span, li, label, h1, h2, h3, h4, h5, h6 {
+    color: #e0e0e0 !important;
+}
+.stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
+    color: #ffffff !important;
+}
+.stTextArea textarea {
+    background-color: #1a1a2e !important;
+    color: #f0f0f0 !important;
+    border: 1.5px solid #444466 !important;
+    border-radius: 6px !important;
+    font-size: 0.97em !important;
+}
+.stTextArea textarea::placeholder {
+    color: #888 !important;
+}
+.stTextArea textarea:focus {
+    border-color: #FF9800 !important;
+    box-shadow: 0 0 0 2px rgba(255,152,0,0.25) !important;
+}
+.stTextInput input {
+    background-color: #1a1a2e !important;
+    color: #f0f0f0 !important;
+    border: 1.5px solid #444466 !important;
+    border-radius: 6px !important;
+}
+.stTextInput input:focus {
+    border-color: #FF9800 !important;
+    box-shadow: 0 0 0 2px rgba(255,152,0,0.25) !important;
+}
+.stTextArea label, .stTextInput label {
+    color: #b0b8c8 !important;
+    font-weight: 600 !important;
+    font-size: 0.95em !important;
+}
+[data-testid="stExpander"] {
+    background-color: #1a1a2e !important;
+    border: 1px solid #333355 !important;
+    border-radius: 8px !important;
+}
+[data-testid="stExpander"] summary {
+    color: #e0e0e0 !important;
+}
+.stButton > button[kind="primary"] {
+    background-color: #FF9800 !important;
+    color: #0e1117 !important;
+    font-weight: bold !important;
+    border: none !important;
+}
+.stButton > button[kind="primary"]:hover {
+    background-color: #F57C00 !important;
+}
+.stProgress > div > div {
+    background-color: #FF9800 !important;
+}
+[data-testid="stInfo"] {
+    background-color: #1a2a3f !important;
+    color: #90caf9 !important;
+    border-left: 4px solid #1976D2 !important;
+}
+[data-testid="stSuccess"] {
+    background-color: #1a2e1f !important;
+    color: #a5d6a7 !important;
+    border-left: 4px solid #4CAF50 !important;
+}
+[data-testid="stWarning"] {
+    background-color: #2e2200 !important;
+    color: #ffe082 !important;
+    border-left: 4px solid #FF9800 !important;
+}
+[data-testid="stError"] {
+    background-color: #2e0a0a !important;
+    color: #ef9a9a !important;
+    border-left: 4px solid #F44336 !important;
+}
+[data-testid="stMetric"] {
+    background-color: #1a1a2e !important;
+    border-radius: 8px !important;
+    padding: 12px !important;
+}
+hr {
+    border-color: #333355 !important;
+}
+.stTextArea textarea:disabled {
+    background-color: #131320 !important;
+    color: #aaaacc !important;
+    border-color: #333355 !important;
+}
+/* Logo fisso in alto a sinistra */
+#avantgrade-fixed-logo {
+    position: fixed;
+    top: 55px;
+    left: 12px;
+    z-index: 9999;
+    background: rgba(14,17,23,0.88);
+    padding: 6px 10px;
+    border-radius: 8px;
+    backdrop-filter: blur(4px);
+    border: 1px solid #333355;
+}
+#avantgrade-fixed-logo img {
+    height: 36px;
+    width: auto;
+    display: block;
+}
+</style>
+
+<div id="avantgrade-fixed-logo">
+  <img src="https://www.avantgrade.com/wp-content/uploads/2024/11/Logo_avantgrade_colori.png"
+       alt="AvantGrade" />
+</div>
+""", unsafe_allow_html=True)
+
     # Header
     st.title("🎯 Brand AI Integrity Tool")
-    st.markdown("**Misura quanto le risposte dell'AI rappresentano correttamente il tuo brand.**")
+    st.markdown(
+        "<p style='font-size:1.15em; color:#b0c4de; margin-top:-10px; margin-bottom:10px;'>"
+        "<b>Misura in 2 minuti se le risposte dell&#39;AI rappresentano correttamente il tuo brand in Italia</b>"
+        "</p>",
+        unsafe_allow_html=True
+    )
     st.markdown("---")
 
     # Check secrets
