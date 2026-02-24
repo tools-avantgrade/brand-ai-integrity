@@ -1972,10 +1972,10 @@ def main():
     # Init session state
     init_session_state()
 
-    # Logo AvantGrade fisso in alto a sinistra + CSS strutturale adattivo
+    # Logo AvantGrade fisso + CSS (tema scuro gestito da config.toml)
     st.markdown("""
 <style>
-/* ===== SPAZIO SUPERIORE PER LOGO FISSO ===== */
+/* Spazio per non coprire il contenuto con il logo fisso */
 .main .block-container {
     padding-top: 90px !important;
 }
@@ -1986,32 +1986,13 @@ def main():
     top: 50px;
     left: 14px;
     z-index: 9999;
-    padding: 8px 18px;
+    padding: 9px 18px;
     border-radius: 12px;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-}
-/* Light mode */
-@media (prefers-color-scheme: light) {
-    #avantgrade-fixed-logo {
-        background: rgba(255, 255, 255, 0.95);
-        border: 1.5px solid rgba(0, 0, 0, 0.08);
-        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
-    }
-}
-/* Dark mode */
-@media (prefers-color-scheme: dark) {
-    #avantgrade-fixed-logo {
-        background: rgba(18, 18, 28, 0.95);
-        border: 1.5px solid rgba(255, 255, 255, 0.10);
-        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.50);
-    }
-}
-/* Fallback (nessuna preferenza rilevata) */
-#avantgrade-fixed-logo {
-    background: rgba(255, 255, 255, 0.95);
-    border: 1.5px solid rgba(0, 0, 0, 0.08);
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+    background: rgba(16, 18, 30, 0.92);
+    border: 1.5px solid rgba(255, 255, 255, 0.10);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
 }
 #avantgrade-fixed-logo img {
     height: 54px;
@@ -2019,29 +2000,42 @@ def main():
     display: block;
 }
 
-/* ===== BOTTONE PRIMARIO ===== */
+/* ===== BOTTONE PRIMARIO — ARANCIONE AVANTGRADE ===== */
 .stButton > button[kind="primary"] {
     background-color: #E87722 !important;
     color: #ffffff !important;
     font-weight: 700 !important;
     border: none !important;
+    letter-spacing: 0.02em;
 }
 .stButton > button[kind="primary"]:hover {
     background-color: #cf6610 !important;
+    color: #ffffff !important;
 }
 
-/* ===== FOCUS ===== */
+/* ===== FOCUS SUI CAMPI — ARANCIONE ===== */
 .stTextArea textarea:focus,
 .stTextInput input:focus {
     border-color: #E87722 !important;
-    box-shadow: 0 0 0 2px rgba(232, 119, 34, 0.20) !important;
+    box-shadow: 0 0 0 2px rgba(232, 119, 34, 0.22) !important;
 }
 
-/* ===== LABEL DOMANDE ===== */
+/* ===== LABEL DOMANDE — GRASSETTO ===== */
 .stTextArea label,
 .stTextInput label {
     font-weight: 700 !important;
     font-size: 0.97em !important;
+}
+
+/* ===== TESTO NELLE AREE DI TESTO — LEGGIBILE ===== */
+.stTextArea textarea {
+    color: #e8e8f0 !important;
+    font-size: 0.96em !important;
+    line-height: 1.5 !important;
+}
+.stTextArea textarea:disabled {
+    color: #9090a8 !important;
+    opacity: 1 !important;
 }
 
 /* ===== PROGRESS BAR ===== */
