@@ -1543,10 +1543,11 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
                 # Mostra messaggio di attesa
                 timer_container.markdown(
-                    "<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
-                    "<h2 style='margin: 0; color: #1976D2;'>Analisi in corso...</h2>"
-                    "<p style='margin: 10px 0; font-size: 1.1em; color: #1976D2;'>Stiamo elaborando la tua richiesta, ti chiediamo di attendere qualche minuto e non uscire da questa pagina.</p>"
-                    "</div>",
+                    f"<div style='background:#0277BD; padding:22px; border-radius:12px; text-align:center; margin:15px 0;'>"
+                    f"<h2 style='margin:0; color:#fff; font-size:1.4em;'>⏱️ Analisi in corso...</h2>"
+                    f"<p style='margin:10px 0 4px; font-size:1.15em; font-weight:700; color:#fff;'>Mancano circa {est_label} al completamento dell&#39;analisi</p>"
+                    f"<p style='margin:0; font-size:0.9em; color:rgba(255,255,255,0.85);'>⚠️ Non chiudere questa finestra durante l&#39;analisi</p>"
+                    f"</div>",
                     unsafe_allow_html=True
                 )
 
@@ -1561,9 +1562,10 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
                     # Gemini
                     timer_container.markdown(
-                        f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
-                        f"<h2 style='margin: 0; color: #1976D2;'>Gemini - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.1em; color: #1976D2;'>Stiamo elaborando la tua richiesta, ti chiediamo di attendere qualche minuto e non uscire da questa pagina.</p>"
+                        f"<div style='background:#1565C0; padding:20px; border-radius:12px; text-align:center; margin:15px 0;'>"
+                        f"<h2 style='margin:0; color:#fff; font-size:1.25em;'>⚫ Gemini — Domanda {idx + 1} di {len(questions)}</h2>"
+                        f"<p style='margin:10px 0 4px; font-size:1.05em; font-weight:700; color:#fff;'>Mancano circa {rem_label} al completamento</p>"
+                        f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Non chiudere questa finestra</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1579,9 +1581,10 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
                     # ChatGPT
                     timer_container.markdown(
-                        f"<div style='background-color: #E8F5E9; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
-                        f"<h2 style='margin: 0; color: #2E7D32;'>ChatGPT - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.1em; color: #2E7D32;'>Stiamo elaborando la tua richiesta, ti chiediamo di attendere qualche minuto e non uscire da questa pagina.</p>"
+                        f"<div style='background:#1B5E20; padding:20px; border-radius:12px; text-align:center; margin:15px 0;'>"
+                        f"<h2 style='margin:0; color:#fff; font-size:1.25em;'>🟢 ChatGPT — Domanda {idx + 1} di {len(questions)}</h2>"
+                        f"<p style='margin:10px 0 4px; font-size:1.05em; font-weight:700; color:#fff;'>Mancano circa {rem_label} al completamento</p>"
+                        f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Non chiudere questa finestra</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1597,9 +1600,10 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
                     # Claude
                     timer_container.markdown(
-                        f"<div style='background-color: #F3E5F5; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #7B1FA2;'>"
-                        f"<h2 style='margin: 0; color: #7B1FA2;'>Claude - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.1em; color: #7B1FA2;'>Stiamo elaborando la tua richiesta, ti chiediamo di attendere qualche minuto e non uscire da questa pagina.</p>"
+                        f"<div style='background:#4A148C; padding:20px; border-radius:12px; text-align:center; margin:15px 0;'>"
+                        f"<h2 style='margin:0; color:#fff; font-size:1.25em;'>🟣 Claude — Domanda {idx + 1} di {len(questions)}</h2>"
+                        f"<p style='margin:10px 0 4px; font-size:1.05em; font-weight:700; color:#fff;'>Mancano circa {rem_label} al completamento</p>"
+                        f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Non chiudere questa finestra</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1615,10 +1619,11 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
                 # Step 2: Valuta risposte (batch: 1 chiamata per domanda invece di 3)
                 timer_container.markdown(
-                    "<div style='background-color: #FFF3E0; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #E65100;'>"
-                    "<h2 style='margin: 0; color: #E65100;'>Valutazione risposte in corso...</h2>"
-                    "<p style='margin: 10px 0; font-size: 1.1em; color: #E65100;'>Stiamo elaborando la tua richiesta, ti chiediamo di attendere qualche minuto e non uscire da questa pagina.</p>"
-                    "</div>",
+                    f"<div style='background:#BF360C; padding:22px; border-radius:12px; text-align:center; margin:15px 0;'>"
+                    f"<h2 style='margin:0; color:#fff; font-size:1.3em;'>📊 Calcolo punteggio finale...</h2>"
+                    f"<p style='margin:10px 0 4px; font-size:1.05em; font-weight:700; color:#fff;'>Quasi finito! Elaborazione risultati in corso.</p>"
+                    f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Non chiudere questa finestra</p>"
+                    f"</div>",
                     unsafe_allow_html=True
                 )
                 status_text.text("Valutando le risposte con AI evaluator...")
@@ -1707,9 +1712,10 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
                 # Mostra messaggio finale
                 timer_container.markdown(
-                    "<div style='background-color: #C8E6C9; padding: 25px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
-                    "<h1 style='margin: 0; color: #2E7D32;'>Analisi completata!</h1>"
-                    "</div>",
+                    f"<div style='background:#1B5E20; padding:28px; border-radius:12px; text-align:center; margin:15px 0;'>"
+                    f"<h1 style='margin:0; color:#fff; font-size:1.8em;'>✅ Analisi completata!</h1>"
+                    f"<p style='margin:14px 0 0; font-size:1.15em; font-weight:700; color:#fff;'>⏱️ Tempo totale: {total_time} secondi</p>"
+                    f"</div>",
                     unsafe_allow_html=True
                 )
 
@@ -1792,7 +1798,7 @@ def render_step_3_results():
 
     # Mostra messaggio descrittivo sotto il box
     st.markdown(
-        f"<p style='text-align: center; font-size: 1.2em; margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 8px; color: #333333;'>{message}</p>",
+        f"<p style='text-align: center; font-size: 1.15em; margin-top: 20px; padding: 15px; border-radius: 8px; border: 2px solid {color}; color: {color};'>{message}</p>",
         unsafe_allow_html=True
     )
 
@@ -1966,125 +1972,81 @@ def main():
     # Init session state
     init_session_state()
 
-    # CSS Tema Scuro Fisso + Logo AvantGrade fisso in alto a sinistra
+    # Logo AvantGrade fisso in alto a sinistra + CSS strutturale adattivo
     st.markdown("""
 <style>
-/* ===== TEMA SCURO FISSO ===== */
-html, body, [data-testid="stApp"], .stApp {
-    background-color: #0e1117 !important;
-    color: #e0e0e0 !important;
-}
+/* ===== SPAZIO SUPERIORE PER LOGO FISSO ===== */
 .main .block-container {
-    background-color: #0e1117 !important;
-    padding-top: 80px !important;
+    padding-top: 90px !important;
 }
-[data-testid="stSidebar"] {
-    background-color: #1a1a2e !important;
+
+/* ===== LOGO AVANTGRADE — FISSO IN ALTO A SINISTRA ===== */
+#avantgrade-fixed-logo {
+    position: fixed;
+    top: 50px;
+    left: 14px;
+    z-index: 9999;
+    padding: 8px 18px;
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
 }
-p, span, li, label, h1, h2, h3, h4, h5, h6 {
-    color: #e0e0e0 !important;
+/* Light mode */
+@media (prefers-color-scheme: light) {
+    #avantgrade-fixed-logo {
+        background: rgba(255, 255, 255, 0.95);
+        border: 1.5px solid rgba(0, 0, 0, 0.08);
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+    }
 }
-.stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
-    color: #ffffff !important;
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+    #avantgrade-fixed-logo {
+        background: rgba(18, 18, 28, 0.95);
+        border: 1.5px solid rgba(255, 255, 255, 0.10);
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.50);
+    }
 }
-.stTextArea textarea {
-    background-color: #1a1a2e !important;
-    color: #f0f0f0 !important;
-    border: 1.5px solid #444466 !important;
-    border-radius: 6px !important;
-    font-size: 0.97em !important;
+/* Fallback (nessuna preferenza rilevata) */
+#avantgrade-fixed-logo {
+    background: rgba(255, 255, 255, 0.95);
+    border: 1.5px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
 }
-.stTextArea textarea::placeholder {
-    color: #888 !important;
+#avantgrade-fixed-logo img {
+    height: 54px;
+    width: auto;
+    display: block;
 }
-.stTextArea textarea:focus {
-    border-color: #FF9800 !important;
-    box-shadow: 0 0 0 2px rgba(255,152,0,0.25) !important;
-}
-.stTextInput input {
-    background-color: #1a1a2e !important;
-    color: #f0f0f0 !important;
-    border: 1.5px solid #444466 !important;
-    border-radius: 6px !important;
-}
-.stTextInput input:focus {
-    border-color: #FF9800 !important;
-    box-shadow: 0 0 0 2px rgba(255,152,0,0.25) !important;
-}
-.stTextArea label, .stTextInput label {
-    color: #b0b8c8 !important;
-    font-weight: 600 !important;
-    font-size: 0.95em !important;
-}
-[data-testid="stExpander"] {
-    background-color: #1a1a2e !important;
-    border: 1px solid #333355 !important;
-    border-radius: 8px !important;
-}
-[data-testid="stExpander"] summary {
-    color: #e0e0e0 !important;
-}
+
+/* ===== BOTTONE PRIMARIO ===== */
 .stButton > button[kind="primary"] {
-    background-color: #FF9800 !important;
-    color: #0e1117 !important;
-    font-weight: bold !important;
+    background-color: #E87722 !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
     border: none !important;
 }
 .stButton > button[kind="primary"]:hover {
-    background-color: #F57C00 !important;
+    background-color: #cf6610 !important;
 }
+
+/* ===== FOCUS ===== */
+.stTextArea textarea:focus,
+.stTextInput input:focus {
+    border-color: #E87722 !important;
+    box-shadow: 0 0 0 2px rgba(232, 119, 34, 0.20) !important;
+}
+
+/* ===== LABEL DOMANDE ===== */
+.stTextArea label,
+.stTextInput label {
+    font-weight: 700 !important;
+    font-size: 0.97em !important;
+}
+
+/* ===== PROGRESS BAR ===== */
 .stProgress > div > div {
-    background-color: #FF9800 !important;
-}
-[data-testid="stInfo"] {
-    background-color: #1a2a3f !important;
-    color: #90caf9 !important;
-    border-left: 4px solid #1976D2 !important;
-}
-[data-testid="stSuccess"] {
-    background-color: #1a2e1f !important;
-    color: #a5d6a7 !important;
-    border-left: 4px solid #4CAF50 !important;
-}
-[data-testid="stWarning"] {
-    background-color: #2e2200 !important;
-    color: #ffe082 !important;
-    border-left: 4px solid #FF9800 !important;
-}
-[data-testid="stError"] {
-    background-color: #2e0a0a !important;
-    color: #ef9a9a !important;
-    border-left: 4px solid #F44336 !important;
-}
-[data-testid="stMetric"] {
-    background-color: #1a1a2e !important;
-    border-radius: 8px !important;
-    padding: 12px !important;
-}
-hr {
-    border-color: #333355 !important;
-}
-.stTextArea textarea:disabled {
-    background-color: #131320 !important;
-    color: #aaaacc !important;
-    border-color: #333355 !important;
-}
-/* Logo fisso in alto a sinistra */
-#avantgrade-fixed-logo {
-    position: fixed;
-    top: 55px;
-    left: 12px;
-    z-index: 9999;
-    background: rgba(14,17,23,0.88);
-    padding: 6px 10px;
-    border-radius: 8px;
-    backdrop-filter: blur(4px);
-    border: 1px solid #333355;
-}
-#avantgrade-fixed-logo img {
-    height: 36px;
-    width: auto;
-    display: block;
+    background-color: #E87722 !important;
 }
 </style>
 
@@ -2097,7 +2059,7 @@ hr {
     # Header
     st.title("🎯 Brand AI Integrity Tool")
     st.markdown(
-        "<p style='font-size:1.15em; color:#b0c4de; margin-top:-10px; margin-bottom:10px;'>"
+        "<p style='font-size:1.15em; margin-top:-10px; margin-bottom:10px;'>"
         "<b>Misura in 2 minuti se le risposte dell&#39;AI rappresentano correttamente il tuo brand in Italia</b>"
         "</p>",
         unsafe_allow_html=True
