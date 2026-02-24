@@ -1,6 +1,7 @@
-[theme]
-base = "dark"
-backgroundColor = "#0e1117"
-secondaryBackgroundColor = "#1a1a2e"
-textColor = "#e0e0e0"
-primaryColor = "#FF9800"
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+gatherUsageStats = false
