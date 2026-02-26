@@ -31,7 +31,7 @@ DEFAULT_QUESTIONS = [
     "Qual è il pubblico target principale di {BRAND_NAME}?",
     "{BRAND_NAME} ha sedi operative? Dove?",
     "Quali sono i canali social ufficiali del brand {BRAND_NAME}? (ad esempio linkedin, instagram)",
-    "Quali sono i contatti del brand {BRAND_NAME}? (Ad es. inserisci il numero di telefono, pagine contatto del sito)"
+    "Qual è il sito web ufficiale di {BRAND_NAME} in Italia?"
 ]
 MIN_QUESTIONS = 3
 MAX_QUESTIONS = 10
@@ -472,7 +472,7 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
                     else:
                         bg_color = colors.HexColor('#FFEBEE')  # Rosso chiaro
                         border_color = colors.HexColor('#F44336')
-                        status_text = "✗ SBAGLIATA"
+                        status_text = "✗ L'AI NON HA CAPITO"
 
                     # Header AI
                     story.append(Paragraph(f"<b>{ai_icon} {ai_label}</b> - Score: {ai_score:.2f}/1.00 - {status_text}", styles['Normal']))
@@ -1261,7 +1261,7 @@ def render_section_d():
             status = "CORRETTA"
             status_color = "green"
         else:
-            status = "SBAGLIATA"
+            status = "L'AI NON HA CAPITO"
             status_color = "red"
 
         avg_score = result.get('average_score', 0)
@@ -1286,7 +1286,7 @@ def render_section_d():
                     ai_status_color = "green" if ai_result.get('is_correct', False) else "red"
 
                     st.markdown(f"**{ai_icon} {ai_label}**")
-                    st.markdown(f"- Esito: :{ai_status_color}[{'CORRETTA' if ai_result.get('is_correct') else 'SBAGLIATA'}]")
+                    st.markdown(f"- Esito: :{ai_status_color}[{'CORRETTA' if ai_result.get('is_correct') else \"L'AI NON HA CAPITO\"}]")
                     st.markdown(f"- Score: {ai_result.get('score', 0):.2f} / 1.00")
                     st.markdown(f"- Motivazione: {ai_result.get('reason', 'N/A')}")
 
@@ -1427,6 +1427,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
                     f"<h2 style='margin: 0; color: #1976D2;'>⏱️ Analisi in corso...</h2>"
                     f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #1976D2;'>Tempo stimato: ~{estimated_time} secondi</p>"
+                    f"<p style='margin: 5px 0; font-size: 1.0em; color: #1976D2; opacity: 0.85;'>Lascia aperta questa finestra per completare l'analisi</p>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -1744,7 +1745,7 @@ def render_step_3_results():
         question = questions[idx].replace("{BRAND_NAME}", brand_name)
 
         avg_score = result.get('average_score', 0)
-        status = "✅ CORRETTA" if result.get('is_correct', False) else "❌ SBAGLIATA"
+        status = "✅ CORRETTA" if result.get('is_correct', False) else "❌ L'AI NON HA CAPITO"
 
         with st.expander(f"Domanda {idx + 1}: {question[:50]}... - {status}"):
             st.markdown(f"**Domanda:** {question}")
@@ -1798,32 +1799,25 @@ def render_step_3_results():
 
     # === CALL TO ACTION - Contatta AvantGrade ===
     st.markdown("---")
-    st.markdown("### 📧 Vuoi migliorare la tua Brand AI Integrity?")
+    st.markdown("## Migliora la tua Brand Integrity")
 
-    mailto_url = (
-        "mailto:info@avantgrade.com"
-        "?subject=Interesse%20Brand%20AI%20Integrity"
-        "&body=Ciao%2C%0A%0A"
-        "ho%20usato%20il%20Brand%20AI%20Integrity%20Tool%20e%20vorrei%20saperne%20di%20pi%C3%B9%20su%20come%20migliorare%20la%20presenza%20del%20mio%20brand%20nelle%20AI.%0A%0A"
-        "Grazie!"
-    )
     st.markdown(
-        f"""
+        """
         <div style='background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
                     padding: 30px;
                     border-radius: 15px;
                     text-align: center;
                     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
                     margin: 20px 0;'>
-            <h2 style='color: white; margin: 0 0 15px 0; font-size: 1.8em;'>
-                🚀 Migliora la presenza del tuo brand nelle AI
-            </h2>
             <p style='color: white; font-size: 1.2em; margin: 0 0 20px 0; opacity: 0.95;'>
                 Il Team Innovation di AvantGrade può aiutarti a ottimizzare la rappresentazione del tuo brand
                 nelle intelligenze artificiali e migliorare il tuo Brand AI Integrity Score.
             </p>
-            <a href="{mailto_url}" style="color: white; font-size: 1.2em; font-weight: bold;">
-                📧 Contatta info@avantgrade.com
+            <a href="https://www.avantgrade.com/schedule-a-call"
+               style="display: inline-block; background-color: white; color: #FF9800;
+                      font-size: 1.1em; font-weight: bold; padding: 12px 30px;
+                      border-radius: 8px; text-decoration: none;">
+                Contattaci da qui
             </a>
         </div>
         """,
