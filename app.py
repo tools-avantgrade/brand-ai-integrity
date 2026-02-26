@@ -12,6 +12,7 @@ from anthropic import Anthropic
 import requests
 import json
 import time
+import os
 from typing import Dict, List, Optional, Tuple
 from io import BytesIO
 from reportlab.lib import colors
@@ -65,32 +66,41 @@ def get_all_questions():
     return DEFAULT_QUESTIONS + st.session_state.custom_questions
 
 
+def get_secret(key: str, default: str = None) -> Optional[str]:
+    """Legge un secret da st.secrets (secrets.toml) oppure da variabili d'ambiente (Railway/deploy)."""
+    try:
+        value = st.secrets[key]
+        if value:
+            return value
+    except (KeyError, FileNotFoundError):
+        pass
+    return os.environ.get(key, default)
+
+
 def check_secrets() -> Tuple[bool, Optional[str]]:
     """Verifica che i secrets necessari siano configurati."""
     try:
         # Verifica Gemini API Key
-        gemini_key = st.secrets["GEMINI_API_KEY"]
+        gemini_key = get_secret("GEMINI_API_KEY")
         if not gemini_key or gemini_key == "YOUR_GEMINI_API_KEY_HERE":
-            return False, "GEMINI_API_KEY non configurata correttamente in secrets.toml"
+            return False, "GEMINI_API_KEY non configurata (secrets.toml o variabile d'ambiente)"
 
         # Verifica OpenAI API Key
-        openai_key = st.secrets["OPENAI_API_KEY"]
+        openai_key = get_secret("OPENAI_API_KEY")
         if not openai_key or openai_key == "YOUR_OPENAI_API_KEY_HERE":
-            return False, "OPENAI_API_KEY non configurata correttamente in secrets.toml"
+            return False, "OPENAI_API_KEY non configurata (secrets.toml o variabile d'ambiente)"
 
         # Verifica Anthropic API Key
-        anthropic_key = st.secrets["ANTHROPIC_API_KEY"]
+        anthropic_key = get_secret("ANTHROPIC_API_KEY")
         if not anthropic_key or anthropic_key == "YOUR_ANTHROPIC_API_KEY_HERE":
-            return False, "ANTHROPIC_API_KEY non configurata correttamente in secrets.toml"
+            return False, "ANTHROPIC_API_KEY non configurata (secrets.toml o variabile d'ambiente)"
 
         # Verifica Brave Search API Key (per web search - GRATIS, no limiti)
-        brave_key = st.secrets["BRAVE_API_KEY"]
+        brave_key = get_secret("BRAVE_API_KEY")
         if not brave_key or brave_key == "YOUR_BRAVE_API_KEY_HERE":
-            return False, "BRAVE_API_KEY non configurata correttamente in secrets.toml"
+            return False, "BRAVE_API_KEY non configurata (secrets.toml o variabile d'ambiente)"
 
         return True, None
-    except KeyError as e:
-        return False, f"Chiave API mancante in secrets.toml: {str(e)}"
     except Exception as e:
         return False, f"Errore nel leggere secrets: {str(e)}"
 
@@ -99,11 +109,11 @@ def configure_ai_models() -> Tuple[Optional[genai.GenerativeModel], Optional[Ope
     """Configura tutti i modelli AI (Gemini, OpenAI, Claude) e l'evaluator."""
     try:
         # Configura Gemini
-        gemini_api_key = st.secrets["GEMINI_API_KEY"]
+        gemini_api_key = get_secret("GEMINI_API_KEY")
         genai.configure(api_key=gemini_api_key)
 
-        gemini_model_name = st.secrets.get("GEMINI_MODEL", "gemini-3-flash-preview")
-        evaluator_model_name = st.secrets.get("EVALUATOR_MODEL", gemini_model_name)
+        gemini_model_name = get_secret("GEMINI_MODEL", "gemini-3-flash-preview")
+        evaluator_model_name = get_secret("EVALUATOR_MODEL", gemini_model_name)
 
         # Config per modello di generazione - aumentato token limit
         generation_config = {
@@ -140,14 +150,15 @@ def configure_ai_models() -> Tuple[Optional[genai.GenerativeModel], Optional[Ope
 
         evaluator_model = genai.GenerativeModel(
             model_name=evaluator_model_name,
-            generation_config=evaluator_config
+            generation_config=evaluator_config,
+            safety_settings=safety_settings
         )
 
         # Configura OpenAI
-        openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        openai_client = OpenAI(api_key=get_secret("OPENAI_API_KEY"))
 
         # Configura Anthropic (Claude)
-        anthropic_client = Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
+        anthropic_client = Anthropic(api_key=get_secret("ANTHROPIC_API_KEY"))
 
         return gemini_model, openai_client, anthropic_client, evaluator_model, None
     except Exception as e:
@@ -190,7 +201,7 @@ def web_search(query: str, max_results: int = 10) -> Tuple[str, bool]:
         Tupla (risultati formattati, successo)
     """
     try:
-        brave_key = st.secrets.get("BRAVE_API_KEY", "")
+        brave_key = get_secret("BRAVE_API_KEY", "")
         if not brave_key:
             return "Brave API key non configurata.", False
 
@@ -594,7 +605,10 @@ IMPORTANTE:
 
 Rispondi in italiano, in modo chiaro e diretto (massimo 200 parole)."""
 
-        response = _model.generate_content(prompt)
+        response = _model.generate_content(
+            prompt,
+            request_options={"timeout": 30}
+        )
 
         # Controlla se la risposta è stata bloccata dai safety filters
         if not response.candidates:
@@ -626,7 +640,7 @@ def generate_openai_answer(_client: OpenAI, brand_name: str, question: str) -> T
     """Genera risposta da ChatGPT con ricerca web REALE (Brave Search)."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
-        openai_model = st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")
+        openai_model = get_secret("OPENAI_MODEL", "gpt-4o-mini")
 
         # Ricerca web con Brave (stessa API usata da ChatGPT)
         search_query = f"{brand_name} {final_question}"
@@ -677,7 +691,7 @@ def generate_claude_answer(_client: Anthropic, brand_name: str, question: str) -
     """Genera risposta da Claude con ricerca web REALE (Brave Search)."""
     try:
         final_question = question.replace("{BRAND_NAME}", brand_name)
-        claude_model = st.secrets.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
+        claude_model = get_secret("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 
         # Ricerca web con Brave (stessa qualità delle app AI)
         search_query = f"{brand_name} {final_question}"
@@ -739,8 +753,11 @@ Risposta ground truth (utente):
 {user_answer}
 
 Criteri di valutazione:
-- "corretta" (score >= 0.75) se semanticamente allineata alla ground truth e non contraddice
-- "sbagliata" (score < 0.75) se contraddice, oppure aggiunge affermazioni specifiche incompatibili, oppure manca elementi essenziali quando la ground truth li indica chiaramente
+- "corretta" (score >= 0.75) se semanticamente allineata alla ground truth, non contraddice e non aggiunge troppe informazioni extra non presenti nella ground truth
+- "parziale" (score 0.5-0.74) se le informazioni principali sono corrette MA la risposta AI aggiunge molti dettagli specifici, numeri, nomi o affermazioni che vanno ben oltre quanto indicato nella ground truth (risposta eccessivamente verbose o ricca di dettagli non verificabili). Penalizza proporzionalmente in base alla quantità di informazioni estranee.
+- "sbagliata" (score < 0.5) se contraddice la ground truth, oppure manca elementi essenziali quando la ground truth li indica chiaramente
+
+IMPORTANTE SU ECCESSIVA VERBOSITÀ: Se la risposta AI è molto più lunga della ground truth e aggiunge molti dettagli specifici (indirizzi precisi, numeri, date, nomi di persone, servizi non menzionati), riduci il punteggio di 0.10-0.25 rispetto a quanto varrebbe se fosse solo corretta, anche se non contraddice direttamente.
 
 {"IMPORTANTE: Genera SOLO JSON valido. Il campo 'reason' deve essere una SINGOLA frase breve (max 100 caratteri)." if retry else ""}
 
@@ -759,13 +776,24 @@ Schema JSON:
 - key_conflicts: array di stringhe (max 3 elementi, può essere vuoto [])
 """
 
-        response = _model.generate_content(prompt)
+        response = _model.generate_content(
+            prompt,
+            request_options={"timeout": 30}
+        )
 
-        if not response or not response.text:
-            return None, "Risposta vuota dall'evaluator"
+        if not response:
+            return None, "Risposta nulla dall'evaluator"
+
+        # Gestisci safety blocks
+        if not response.candidates:
+            return None, "Risposta bloccata dai safety filters"
+
+        candidate = response.candidates[0]
+        if not candidate.content or not candidate.content.parts:
+            return None, f"Risposta vuota (finish_reason: {candidate.finish_reason})"
 
         # Parsing JSON robusto
-        response_text = response.text.strip()
+        response_text = candidate.content.parts[0].text.strip()
 
         # Rimuovi markdown code blocks se presenti
         if response_text.startswith("```"):
@@ -807,6 +835,98 @@ Schema JSON:
 
     except Exception as e:
         return None, f"Errore valutazione: {str(e)}"
+
+
+def evaluate_batch(_model: genai.GenerativeModel, question: str, ai_answers: Dict[str, str], user_answer: str, retry: bool = False) -> Tuple[Optional[Dict[str, Dict]], Optional[str]]:
+    """
+    Valuta tutte le risposte AI per una domanda in una singola chiamata.
+    Riduce le chiamate API da 3 per domanda a 1.
+    """
+    ai_models_in = list(ai_answers.keys())
+    if not ai_models_in:
+        return {}, None
+
+    answers_block = ""
+    for ai_name in ai_models_in:
+        display_name = {"gemini": "Gemini", "openai": "ChatGPT", "claude": "Claude"}.get(ai_name, ai_name)
+        answers_block += f"\nRisposta {display_name}:\n{ai_answers[ai_name]}\n"
+
+    try:
+        prompt = f"""Valuta la coerenza tra le risposte AI e la risposta ground truth (utente).
+Le risposte possono contenere elenchi puntati o testo su più righe.
+
+Domanda: {question}
+{answers_block}
+Risposta ground truth (utente):
+{user_answer}
+
+Criteri di valutazione:
+- "corretta" (score >= 0.75) se semanticamente allineata alla ground truth e non contraddice
+- "sbagliata" (score < 0.75) se contraddice, oppure aggiunge affermazioni specifiche incompatibili, oppure manca elementi essenziali quando la ground truth li indica chiaramente
+
+{"IMPORTANTE: Genera SOLO JSON valido. Ogni 'reason' deve essere una SINGOLA frase breve (max 100 caratteri)." if retry else ""}
+
+Restituisci un oggetto JSON con questa struttura (una entry per ogni AI):
+{{
+  {', '.join(f'"{name}": {{"score": 0.85, "is_correct": true, "reason": "Breve spiegazione", "key_conflicts": []}}' for name in ai_models_in)}
+}}
+
+Schema per ogni AI:
+- score: numero decimale da 0.0 a 1.0 (allineamento semantico)
+- is_correct: booleano true se score >= {MATCH_THRESHOLD}, altrimenti false
+- reason: stringa breve (max 100 caratteri, 1 frase senza a capo)
+- key_conflicts: array di stringhe (max 3 elementi, può essere vuoto [])
+"""
+
+        response = _model.generate_content(
+            prompt,
+            request_options={"timeout": 30}
+        )
+
+        if not response:
+            return None, "Risposta nulla dall'evaluator"
+
+        # Gestisci safety blocks
+        if not response.candidates:
+            return None, "Risposta bloccata dai safety filters"
+
+        candidate = response.candidates[0]
+        if not candidate.content or not candidate.content.parts:
+            return None, f"Risposta vuota dall'evaluator (finish_reason: {candidate.finish_reason})"
+
+        response_text = candidate.content.parts[0].text.strip()
+
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            response_text = "\n".join(lines[1:-1]) if len(lines) > 2 else response_text
+            response_text = response_text.replace("```json", "").replace("```", "").strip()
+
+        response_text = response_text.strip()
+
+        try:
+            batch_result = json.loads(response_text)
+
+            results = {}
+            for ai_name in ai_models_in:
+                if ai_name in batch_result:
+                    r = batch_result[ai_name]
+                    r["score"] = float(r.get("score", 0))
+                    r["is_correct"] = bool(r.get("is_correct", False))
+                    if isinstance(r.get("reason"), str):
+                        r["reason"] = r["reason"].replace("\n", " ").strip()
+                    if "key_conflicts" not in r:
+                        r["key_conflicts"] = []
+                    results[ai_name] = r
+
+            return results, None
+
+        except json.JSONDecodeError as e:
+            if not retry:
+                return evaluate_batch(_model, question, ai_answers, user_answer, retry=True)
+            return None, f"Errore parsing JSON batch: {str(e)}\nRisposta: {response_text[:300]}"
+
+    except Exception as e:
+        return None, f"Errore valutazione batch: {str(e)}"
 
 
 def render_section_a():
@@ -1332,30 +1452,34 @@ def render_step_1_brand():
     """Step 1: Inserimento brand name."""
     st.subheader("Step 1: Inserisci il nome del tuo Brand")
 
+    def _on_brand_change():
+        new_val = st.session_state.brand_input
+        if new_val != st.session_state.brand_name:
+            st.session_state.brand_name = new_val
+            st.session_state.ai_answers = {}
+            st.session_state.user_answers = {}
+            st.session_state.eval_results = {}
+            st.session_state.summary = None
+
     brand_name = st.text_input(
         "Nome del Brand",
         value=st.session_state.brand_name,
         placeholder="es. Nike, Apple, AvantGrade...",
-        help="Inserisci il nome del brand da analizzare",
-        key="brand_input"
+        help="Inizia a digitare — il campo si aggiorna automaticamente",
+        key="brand_input",
+        on_change=_on_brand_change
     )
-
-    if brand_name and brand_name != st.session_state.brand_name:
-        st.session_state.brand_name = brand_name
-        # Reset quando cambia brand
-        st.session_state.ai_answers = {}
-        st.session_state.user_answers = {}
-        st.session_state.eval_results = {}
-        st.session_state.summary = None
+    brand_name = st.session_state.brand_name  # usa il valore aggiornato
 
     if brand_name:
         st.success(f"✓ Brand selezionato: **{brand_name}**")
+        st.caption("Puoi proseguire cliccando il pulsante qui sotto.")
 
         if st.button("Continua →", type="primary"):
             st.session_state.current_step = 2
             st.rerun()
     else:
-        st.info("Inserisci il nome del brand per continuare")
+        st.info("Digita il nome del brand nel campo sopra per continuare")
 
 
 def render_step_2_questions_answers(gemini_model, openai_client, anthropic_client, evaluator_model):
@@ -1394,7 +1518,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 value=st.session_state.user_answers.get(idx, ""),
                 key=f"user_answer_{idx}",
                 height=100,
-                placeholder="Inserisci la risposta corretta secondo il tuo brand..."
+                placeholder="Scrivi qui la risposta corretta per il tuo brand..."
             )
 
             st.session_state.user_answers[idx] = user_answer
@@ -1412,17 +1536,18 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
         # Bottone per generare e calcolare tutto insieme
         if st.button("🚀 Analizza con le AI e Calcola Brand Integrity", type="primary"):
             with st.spinner("🔄 Analisi in corso..."):
-                # Stima tempo: ~6 secondi per domanda x 3 AI + 3 secondi valutazione
-                estimated_time = len(questions) * 20  # secondi stimati
-
-                # Container per il timer
+                # Container per il messaggio di stato
                 timer_container = st.empty()
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
                 start_time = time.time()
+                estimated_time = len(questions) * 20  # ~20s per domanda
+                est_min = estimated_time // 60
+                est_sec = estimated_time % 60
+                est_label = f"~{est_min}m {est_sec}s" if est_min > 0 else f"~{est_sec}s"
 
-                # Mostra stima iniziale
+                # Mostra messaggio di attesa
                 timer_container.markdown(
                     f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
                     f"<h2 style='margin: 0; color: #1976D2;'>⏱️ Analisi in corso...</h2>"
@@ -1441,13 +1566,18 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 for idx, question in enumerate(questions):
                     st.session_state.ai_answers[idx] = {}
 
-                    # Gemini
                     elapsed = int(time.time() - start_time)
                     remaining = max(0, estimated_time - elapsed)
+                    rem_min = remaining // 60
+                    rem_sec = remaining % 60
+                    rem_label = f"{rem_min}m {rem_sec}s" if rem_min > 0 else f"{rem_sec}s"
+
+                    # Gemini
                     timer_container.markdown(
-                        f"<div style='background-color: #E3F2FD; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #1976D2;'>"
-                        f"<h2 style='margin: 0; color: #1976D2;'>⚫ Gemini - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #1976D2;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"<div style='background:#1565C0; padding:20px; border-radius:12px; text-align:center; margin:15px 0;'>"
+                        f"<h2 style='margin:0; color:#fff; font-size:1.25em;'>⚫ Gemini — Domanda {idx + 1} di {len(questions)}</h2>"
+                        f"<p style='margin:10px 0 4px; font-size:1.05em; font-weight:700; color:#fff;'>Mancano circa {rem_label} al completamento</p>"
+                        f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Non chiudere questa finestra</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1461,13 +1591,18 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                         st.session_state.ai_answers[idx]["gemini"] = gemini_answer
                     current_step_count += 1
 
-                    # ChatGPT
                     elapsed = int(time.time() - start_time)
                     remaining = max(0, estimated_time - elapsed)
+                    rem_min = remaining // 60
+                    rem_sec = remaining % 60
+                    rem_label = f"{rem_min}m {rem_sec}s" if rem_min > 0 else f"{rem_sec}s"
+
+                    # ChatGPT
                     timer_container.markdown(
-                        f"<div style='background-color: #E8F5E9; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
-                        f"<h2 style='margin: 0; color: #2E7D32;'>🟢 ChatGPT - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #2E7D32;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"<div style='background:#1B5E20; padding:20px; border-radius:12px; text-align:center; margin:15px 0;'>"
+                        f"<h2 style='margin:0; color:#fff; font-size:1.25em;'>🟢 ChatGPT — Domanda {idx + 1} di {len(questions)}</h2>"
+                        f"<p style='margin:10px 0 4px; font-size:1.05em; font-weight:700; color:#fff;'>Mancano circa {rem_label} al completamento</p>"
+                        f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Non chiudere questa finestra</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1481,13 +1616,18 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                         st.session_state.ai_answers[idx]["openai"] = openai_answer
                     current_step_count += 1
 
-                    # Claude
                     elapsed = int(time.time() - start_time)
                     remaining = max(0, estimated_time - elapsed)
+                    rem_min = remaining // 60
+                    rem_sec = remaining % 60
+                    rem_label = f"{rem_min}m {rem_sec}s" if rem_min > 0 else f"{rem_sec}s"
+
+                    # Claude
                     timer_container.markdown(
-                        f"<div style='background-color: #F3E5F5; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #7B1FA2;'>"
-                        f"<h2 style='margin: 0; color: #7B1FA2;'>🟣 Claude - Domanda {idx + 1}/{len(questions)}</h2>"
-                        f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #7B1FA2;'>⏱️ Tempo trascorso: {elapsed}s | Tempo stimato rimanente: ~{remaining}s</p>"
+                        f"<div style='background:#4A148C; padding:20px; border-radius:12px; text-align:center; margin:15px 0;'>"
+                        f"<h2 style='margin:0; color:#fff; font-size:1.25em;'>🟣 Claude — Domanda {idx + 1} di {len(questions)}</h2>"
+                        f"<p style='margin:10px 0 4px; font-size:1.05em; font-weight:700; color:#fff;'>Mancano circa {rem_label} al completamento</p>"
+                        f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Non chiudere questa finestra</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1501,13 +1641,12 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                         st.session_state.ai_answers[idx]["claude"] = claude_answer
                     current_step_count += 1
 
-                # Step 2: Valuta risposte
-                elapsed = int(time.time() - start_time)
-                remaining = max(0, estimated_time - elapsed)
+                # Step 2: Valuta risposte (batch: 1 chiamata per domanda invece di 3)
                 timer_container.markdown(
-                    f"<div style='background-color: #FFF3E0; padding: 20px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #E65100;'>"
-                    f"<h2 style='margin: 0; color: #E65100;'>📊 Valutazione risposte in corso...</h2>"
-                    f"<p style='margin: 10px 0; font-size: 1.3em; font-weight: bold; color: #E65100;'>⏱️ Tempo trascorso: {elapsed}s | Quasi finito!</p>"
+                    f"<div style='background:#BF360C; padding:22px; border-radius:12px; text-align:center; margin:15px 0;'>"
+                    f"<h2 style='margin:0; color:#fff; font-size:1.3em;'>📊 Calcolo punteggio finale...</h2>"
+                    f"<p style='margin:10px 0 4px; font-size:1.05em; font-weight:700; color:#fff;'>Quasi finito! Elaborazione risultati in corso.</p>"
+                    f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Non chiudere questa finestra</p>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -1515,30 +1654,44 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 st.session_state.eval_results = {}
 
                 ai_models = ["gemini", "openai", "claude"]
-                total_evals = len(st.session_state.ai_answers) * len(ai_models)
+                total_evals = len(st.session_state.ai_answers)
                 current_eval = 0
 
                 for idx in sorted(st.session_state.ai_answers.keys()):
                     question = questions[idx].replace("{BRAND_NAME}", brand_name)
-                    ai_answers = st.session_state.ai_answers[idx]
+                    ai_answers_for_q = st.session_state.ai_answers[idx]
                     user_answer = st.session_state.user_answers[idx]
+
+                    progress_bar.progress(0.5 + (current_eval / total_evals / 2))
+                    status_text.text(f"📊 Valutazione domanda {idx + 1}/{total_evals}...")
+
+                    # Batch: valuta tutte le AI in una singola chiamata
+                    batch_results, batch_error = evaluate_batch(evaluator_model, question, ai_answers_for_q, user_answer)
 
                     st.session_state.eval_results[idx] = {}
                     scores = []
 
-                    for ai_name in ai_models:
-                        if ai_name in ai_answers:
-                            progress_bar.progress(0.5 + (current_eval / total_evals / 2))
+                    if batch_error:
+                        errors.append(f"Eval Q{idx + 1}: {batch_error}")
+                        # Fallback: valuta singolarmente con try/except per non bloccare
+                        for ai_name in ai_models:
+                            if ai_name in ai_answers_for_q:
+                                try:
+                                    result, error = evaluate_answer(evaluator_model, question, ai_answers_for_q[ai_name], user_answer)
+                                    if error:
+                                        errors.append(f"Eval Q{idx + 1} ({ai_name}): {error}")
+                                    else:
+                                        st.session_state.eval_results[idx][ai_name] = result
+                                        scores.append(result['score'])
+                                except Exception as e:
+                                    errors.append(f"Eval Q{idx + 1} ({ai_name}): timeout/errore - {str(e)[:100]}")
+                    else:
+                        for ai_name in ai_models:
+                            if ai_name in batch_results:
+                                st.session_state.eval_results[idx][ai_name] = batch_results[ai_name]
+                                scores.append(batch_results[ai_name]['score'])
 
-                            result, error = evaluate_answer(evaluator_model, question, ai_answers[ai_name], user_answer)
-
-                            if error:
-                                errors.append(f"Eval Q{idx + 1} ({ai_name}): {error}")
-                            else:
-                                st.session_state.eval_results[idx][ai_name] = result
-                                scores.append(result['score'])
-
-                            current_eval += 1
+                    current_eval += 1
 
                     # Average score
                     if scores:
@@ -1581,14 +1734,13 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
 
                 progress_bar.progress(1.0)
 
-                # Calcola tempo totale
                 total_time = int(time.time() - start_time)
 
-                # Mostra messaggio finale con tempo
+                # Mostra messaggio finale
                 timer_container.markdown(
-                    f"<div style='background-color: #C8E6C9; padding: 25px; border-radius: 10px; text-align: center; margin: 15px 0; border: 3px solid #2E7D32;'>"
-                    f"<h1 style='margin: 0; color: #2E7D32;'>✅ Analisi completata!</h1>"
-                    f"<p style='margin: 15px 0; font-size: 1.4em; font-weight: bold; color: #2E7D32;'>⏱️ Tempo totale: {total_time} secondi</p>"
+                    f"<div style='background:#1B5E20; padding:28px; border-radius:12px; text-align:center; margin:15px 0;'>"
+                    f"<h1 style='margin:0; color:#fff; font-size:1.8em;'>✅ Analisi completata!</h1>"
+                    f"<p style='margin:14px 0 0; font-size:1.15em; font-weight:700; color:#fff;'>⏱️ Tempo totale: {total_time} secondi</p>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -1597,15 +1749,18 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                 progress_bar.empty()
 
                 if errors:
-                    st.warning("⚠️ Alcuni errori durante l'elaborazione:")
-                    for err in errors[:5]:  # Mostra solo i primi 5
-                        st.text(err)
+                    with st.expander(f"⚠️ {len(errors)} errori durante l'elaborazione", expanded=True):
+                        for err in errors[:10]:
+                            st.text(err)
 
                 time.sleep(2)  # Mostra il messaggio di successo per 2 secondi
 
-                # Passa allo step 3
-                st.session_state.current_step = 3
-                st.rerun()
+                # Passa allo step 3 solo se abbiamo risultati
+                if st.session_state.eval_results:
+                    st.session_state.current_step = 3
+                    st.rerun()
+                else:
+                    st.error("❌ Nessun risultato di valutazione ottenuto. Controlla gli errori sopra e riprova.")
     else:
         st.info("Completa tutte le risposte per procedere con l'analisi")
 
@@ -1628,13 +1783,13 @@ def render_step_3_results():
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("**⚫ Gemini**")
-        st.caption(f"Modello: {st.secrets.get('GEMINI_MODEL', 'gemini-3-flash-preview')}")
+        st.caption(f"Modello: {get_secret('GEMINI_MODEL', 'gemini-3-flash-preview')}")
     with col2:
         st.markdown("**🟢 ChatGPT**")
-        st.caption(f"Modello: {st.secrets.get('OPENAI_MODEL', 'gpt-4o-mini')}")
+        st.caption(f"Modello: {get_secret('OPENAI_MODEL', 'gpt-4o-mini')}")
     with col3:
         st.markdown("**🟣 Claude**")
-        st.caption(f"Modello: {st.secrets.get('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929')}")
+        st.caption(f"Modello: {get_secret('CLAUDE_MODEL', 'claude-sonnet-4-5-20250929')}")
 
     st.markdown("---")
 
@@ -1669,7 +1824,7 @@ def render_step_3_results():
 
     # Mostra messaggio descrittivo sotto il box
     st.markdown(
-        f"<p style='text-align: center; font-size: 1.2em; margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 8px; color: #333333;'>{message}</p>",
+        f"<p style='text-align: center; font-size: 1.15em; margin-top: 20px; padding: 15px; border-radius: 8px; border: 2px solid {color}; color: {color};'>{message}</p>",
         unsafe_allow_html=True
     )
 
@@ -1836,9 +1991,63 @@ def main():
     # Init session state
     init_session_state()
 
+    # Logo AvantGrade fisso + CSS (tema scuro gestito da config.toml)
+    st.markdown("""
+<style>
+/* ===== BOTTONE PRIMARIO — ARANCIONE AVANTGRADE ===== */
+.stButton > button[kind="primary"] {
+    background-color: #E87722 !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    border: none !important;
+    letter-spacing: 0.02em;
+}
+.stButton > button[kind="primary"]:hover {
+    background-color: #cf6610 !important;
+    color: #ffffff !important;
+}
+
+/* ===== FOCUS SUI CAMPI — ARANCIONE ===== */
+.stTextArea textarea:focus,
+.stTextInput input:focus {
+    border-color: #E87722 !important;
+    box-shadow: 0 0 0 2px rgba(232, 119, 34, 0.22) !important;
+}
+
+/* ===== LABEL DOMANDE — GRASSETTO ===== */
+.stTextArea label,
+.stTextInput label {
+    font-weight: 700 !important;
+    font-size: 0.97em !important;
+}
+
+/* ===== TESTO NELLE AREE DI TESTO — LEGGIBILE ===== */
+.stTextArea textarea {
+    color: #e8e8f0 !important;
+    font-size: 0.96em !important;
+    line-height: 1.5 !important;
+}
+.stTextArea textarea:disabled {
+    color: #9090a8 !important;
+    opacity: 1 !important;
+}
+
+/* ===== PROGRESS BAR ===== */
+.stProgress > div > div {
+    background-color: #E87722 !important;
+}
+</style>
+
+""", unsafe_allow_html=True)
+
     # Header
     st.title("🎯 Brand AI Integrity Tool")
-    st.markdown("**Misura quanto le risposte dell'AI rappresentano correttamente il tuo brand.**")
+    st.markdown(
+        "<p style='font-size:1.15em; margin-top:-10px; margin-bottom:10px;'>"
+        "<b>Misura in 2 minuti se le risposte dell&#39;AI rappresentano correttamente il tuo brand in Italia</b>"
+        "</p>",
+        unsafe_allow_html=True
+    )
     st.markdown("---")
 
     # Check secrets
