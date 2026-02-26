@@ -1405,8 +1405,9 @@ def render_section_d():
                     ai_result = result[ai_name]
                     ai_status_color = "green" if ai_result.get('is_correct', False) else "red"
 
+                    ai_esito = "CORRETTA" if ai_result.get('is_correct') else "L'AI NON HA CAPITO"
                     st.markdown(f"**{ai_icon} {ai_label}**")
-                    st.markdown(f"- Esito: :{ai_status_color}[{'CORRETTA' if ai_result.get('is_correct') else \"L'AI NON HA CAPITO\"}]")
+                    st.markdown(f"- Esito: :{ai_status_color}[{ai_esito}]")
                     st.markdown(f"- Score: {ai_result.get('score', 0):.2f} / 1.00")
                     st.markdown(f"- Motivazione: {ai_result.get('reason', 'N/A')}")
 
