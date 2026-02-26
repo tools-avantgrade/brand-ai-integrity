@@ -1578,7 +1578,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                         f"<div style='background:#1565C0; padding:20px; border-radius:12px; text-align:center; margin:15px 0;'>"
                         f"<h2 style='margin:0; color:#fff; font-size:1.25em;'>⚫ Gemini — Domanda {idx + 1} di {len(questions)}</h2>"
                         f"<p style='margin:10px 0 4px; font-size:1.05em; font-weight:700; color:#fff;'>Mancano circa {rem_label} al completamento</p>"
-                        f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Non chiudere questa finestra</p>"
+                        f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Lascia aperta questa finestra per completare l'analisi</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1603,7 +1603,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                         f"<div style='background:#1B5E20; padding:20px; border-radius:12px; text-align:center; margin:15px 0;'>"
                         f"<h2 style='margin:0; color:#fff; font-size:1.25em;'>🟢 ChatGPT — Domanda {idx + 1} di {len(questions)}</h2>"
                         f"<p style='margin:10px 0 4px; font-size:1.05em; font-weight:700; color:#fff;'>Mancano circa {rem_label} al completamento</p>"
-                        f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Non chiudere questa finestra</p>"
+                        f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Lascia aperta questa finestra per completare l'analisi</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1628,7 +1628,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                         f"<div style='background:#4A148C; padding:20px; border-radius:12px; text-align:center; margin:15px 0;'>"
                         f"<h2 style='margin:0; color:#fff; font-size:1.25em;'>🟣 Claude — Domanda {idx + 1} di {len(questions)}</h2>"
                         f"<p style='margin:10px 0 4px; font-size:1.05em; font-weight:700; color:#fff;'>Mancano circa {rem_label} al completamento</p>"
-                        f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Non chiudere questa finestra</p>"
+                        f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Lascia aperta questa finestra per completare l'analisi</p>"
                         f"</div>",
                         unsafe_allow_html=True
                     )
@@ -1647,7 +1647,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
                     f"<div style='background:#BF360C; padding:22px; border-radius:12px; text-align:center; margin:15px 0;'>"
                     f"<h2 style='margin:0; color:#fff; font-size:1.3em;'>📊 Calcolo punteggio finale...</h2>"
                     f"<p style='margin:10px 0 4px; font-size:1.05em; font-weight:700; color:#fff;'>Quasi finito! Elaborazione risultati in corso.</p>"
-                    f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Non chiudere questa finestra</p>"
+                    f"<p style='margin:0; font-size:0.88em; color:rgba(255,255,255,0.82);'>⚠️ Lascia aperta questa finestra per completare l'analisi</p>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
