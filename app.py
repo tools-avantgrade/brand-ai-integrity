@@ -1,5 +1,5 @@
 """
-Brand AI Integrity Tool - MVP
+Brand AI Integrity - MVP
 
 Misura la Brand Integrity del brand confrontando risposte AI (Gemini, ChatGPT, Claude)
 con risposte ground truth fornite dall'utente.
@@ -513,7 +513,7 @@ def generate_pdf_report(brand_name: str, summary: Dict, eval_results: Dict, ques
     # === FOOTER ===
     story.append(PageBreak())
     story.append(Spacer(1, 1*inch))
-    story.append(Paragraph("Report generato da Brand AI Integrity Tool", styles['Normal']))
+    story.append(Paragraph("Report generato da Brand AI Integrity", styles['Normal']))
     story.append(Paragraph("Sviluppato dal <b>Team Innovation di AvantGrade.com</b>", styles['Normal']))
     story.append(Spacer(1, 0.2*inch))
     story.append(Paragraph(f"Data generazione: {datetime.now().strftime('%d/%m/%Y - %H:%M:%S')}", styles['Normal']))
@@ -1330,7 +1330,7 @@ def render_section_d():
 
 def render_step_1_brand():
     """Step 1: Inserimento brand name."""
-    st.subheader("Step 1: Inserisci il nome del tuo Brand")
+    st.subheader("Inserisci il nome del tuo Brand")
 
     brand_name = st.text_input(
         "Nome del Brand",
@@ -1362,7 +1362,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
     """Step 2: Domande, risposte utente, generazione AI e calcolo (tutto in uno)."""
     brand_name = st.session_state.brand_name
 
-    st.subheader(f"Step 2: Rispondi alle domande su {brand_name}")
+    st.subheader(f"Rispondi alle domande su {brand_name}")
     st.markdown("Fornisci le risposte corrette secondo il tuo brand. Le AI cercheranno queste informazioni sul web.")
 
     questions = get_all_questions()
@@ -1377,17 +1377,7 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
         question = q.replace("{BRAND_NAME}", brand_name)
 
         with st.container():
-            st.markdown(f"**Domanda {idx + 1}**")
-
-            # Mostra la domanda (disabled)
-            st.text_area(
-                "",
-                value=question,
-                key=f"default_question_{idx}",
-                height=60,
-                disabled=True,
-                label_visibility="collapsed"
-            )
+            st.markdown(f"**{question}**")
 
             user_answer = st.text_area(
                 "La tua risposta",
@@ -1834,7 +1824,7 @@ def render_step_3_results():
 def main():
     """Main app con flusso step-by-step."""
     st.set_page_config(
-        page_title="Brand AI Integrity Tool",
+        page_title="Brand AI Integrity",
         page_icon="🎯",
         layout="centered"  # Cambiato da "wide" a "centered"
     )
@@ -1843,7 +1833,7 @@ def main():
     init_session_state()
 
     # Header
-    st.title("🎯 Brand AI Integrity Tool")
+    st.title("🎯 Brand AI Integrity")
     st.markdown("**Misura quanto le risposte dell'AI rappresentano correttamente il tuo brand.**")
     st.markdown("---")
 
