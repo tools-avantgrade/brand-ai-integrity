@@ -1505,11 +1505,12 @@ def render_step_2_questions_answers(gemini_model, openai_client, anthropic_clien
             st.markdown(f"**{question}**")
 
             user_answer = st.text_area(
-                "La tua risposta",
+                "",
                 value=st.session_state.user_answers.get(idx, ""),
                 key=f"user_answer_{idx}",
                 height=100,
-                placeholder="Scrivi qui la risposta corretta per il tuo brand..."
+                placeholder="Scrivi qui la risposta corretta per il tuo brand...",
+                label_visibility="collapsed"
             )
 
             st.session_state.user_answers[idx] = user_answer
