@@ -1,20 +1,17 @@
 # Streamlit framework
 streamlit>=1.30.0
-
-# Google Generative AI SDK (official Gemini SDK)
+ 
+# Google Generative AI SDK (Gemini)
 google-generativeai>=0.3.0
-
-# OpenAI SDK (for ChatGPT)
+ 
+# OpenAI SDK (ChatGPT)
 openai>=1.0.0
-
-# Anthropic SDK (for Claude)
-anthropic>=0.18.0
-
-# Web search capabilities
+ 
+# Web search (Brave Search API)
 requests>=2.31.0
-
+ 
 # PDF generation
 reportlab>=4.0.0
-
-# Additional utilities
+ 
+# Utilities
 python-dotenv>=1.0.0
