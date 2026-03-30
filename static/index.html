@@ -209,7 +209,7 @@ function chk2(){let v=true;state.questions.forEach((q,i)=>{const val=state.userA
 $('btnBack1').addEventListener('click',()=>showStep(1));
 $('btnAnalyze').addEventListener('click',()=>runAnalysis());
 const PM={gemini:['Gemini studia il tuo brand... 🔮','Gemini consulta il web... 🌐','Gemini elabora... ⚡','Gemini ragiona... 🧠','Gemini quasi pronto... ✨'],chatgpt:['ChatGPT cerca info... 💬','ChatGPT naviga il web... 🕵️','ChatGPT analizza... 🔍','ChatGPT prepara la risposta... ✨','ChatGPT ci pensa... 🤔'],eval:['Confrontiamo le risposte... ⚖️','Il giudice AI valuta... 📊','Calcoliamo il tuo score... 🎯'],recommendation:['Chi consigliano le AI? 🏆'],comment:['Analisi qualitativa... ✨']};
-async function runAnalysis(){$('loadingOverlay').classList.add('visible');$('loadingPhase').textContent='Preparazione analisi...';$('loadingSub').textContent='Connessione alle AI';$('loadingBar').style.width='0%';
+async function runAnalysis(){$('loadingOverlay').classList.add('visible');$('loadingPhase').textContent='Preparazione analisi...';$('loadingSub').textContent='Connessione alle AI';$('orbRing').style.strokeDashoffset='439.8';$('orbPct').innerHTML='0<span class="orb-pct-sym">%</span>';
 const body={brand_name:state.brandName,sector:state.sector,user_answers:{}};for(const[k,v]of Object.entries(state.userAnswers))body.user_answers[String(k)]=String(v);
 try{const resp=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const reader=resp.body.getReader();const dec=new TextDecoder();let buf='';
 while(true){const{done,value}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const lines=buf.split('\n');buf=lines.pop();let et='',ed='';
