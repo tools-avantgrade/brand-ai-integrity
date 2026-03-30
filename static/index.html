@@ -48,13 +48,17 @@ h1,h2,h3,h4{font-family:'Outfit',sans-serif;font-weight:700;letter-spacing:-.02e
 .btn-full{width:100%}
 .loading-overlay{position:fixed;inset:0;background:rgba(10,13,20,.92);backdrop-filter:blur(10px);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1000;opacity:0;pointer-events:none;transition:opacity .4s ease}
 .loading-overlay.visible{opacity:1;pointer-events:all}
-.orb-container{position:relative;width:120px;height:120px;margin-bottom:40px}
-.orb{width:120px;height:120px;border-radius:50%;background:radial-gradient(circle at 30% 30%,var(--orange-light),var(--orange),var(--orange-dark));box-shadow:0 0 60px rgba(232,119,34,.4),inset 0 0 30px rgba(255,255,255,.1);animation:orbPulse 2s ease-in-out infinite,orbRotate 8s linear infinite}
+.orb-container{position:relative;width:160px;height:160px;margin-bottom:40px;display:flex;align-items:center;justify-content:center}
+.orb-ring{position:absolute;top:0;left:0;width:160px;height:160px;transform:rotate(-90deg)}
+.orb-ring-bg{fill:none;stroke:rgba(255,255,255,.08);stroke-width:4}
+.orb-ring-fill{fill:none;stroke:url(#ringGrad);stroke-width:4;stroke-linecap:round;stroke-dasharray:439.8;stroke-dashoffset:439.8;transition:stroke-dashoffset .6s ease}
+.orb{width:120px;height:120px;border-radius:50%;background:radial-gradient(circle at 30% 30%,var(--orange-light),var(--orange),var(--orange-dark));box-shadow:0 0 60px rgba(232,119,34,.4),inset 0 0 30px rgba(255,255,255,.1);animation:orbPulse 2s ease-in-out infinite;position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .orb::after{content:'';position:absolute;top:10%;left:15%;width:30%;height:20%;border-radius:50%;background:radial-gradient(ellipse,rgba(255,255,255,.3),transparent);transform:rotate(-20deg)}
-@keyframes orbPulse{0%,100%{transform:scale(1);box-shadow:0 0 60px rgba(232,119,34,.4)}50%{transform:scale(1.08);box-shadow:0 0 80px rgba(232,119,34,.6)}}
-@keyframes orbRotate{from{filter:hue-rotate(0deg)}to{filter:hue-rotate(15deg)}}
+.orb-pct{font-family:'Outfit';font-size:1.5rem;font-weight:900;color:white;text-shadow:0 2px 8px rgba(0,0,0,.4);line-height:1;position:relative;z-index:1}
+.orb-pct-sym{font-size:.9rem;font-weight:600;opacity:.85}
+@keyframes orbPulse{0%,100%{box-shadow:0 0 60px rgba(232,119,34,.4)}50%{box-shadow:0 0 80px rgba(232,119,34,.6)}}
 .loading-phase{font-family:'Outfit';font-size:1.15rem;font-weight:600;color:var(--text);text-align:center;min-height:30px;transition:opacity .3s}
-.loading-sub{font-size:.9rem;color:var(--text2);margin-top:8px;text-align:center}
+.loading-sub{font-size:.9rem;color:var(--text2);margin-top:8px;text-align:center;min-height:24px}
 .loading-progress{width:280px;height:4px;background:rgba(255,255,255,.08);border-radius:4px;margin-top:24px;overflow:hidden}
 .loading-progress-bar{height:100%;background:linear-gradient(90deg,var(--orange),var(--orange-light));border-radius:4px;transition:width .5s ease;width:0%}
 .score-hero{text-align:center;padding:48px 24px;border-radius:20px;position:relative;overflow:hidden;margin-bottom:24px}
@@ -109,10 +113,21 @@ h1,h2,h3,h4{font-family:'Outfit',sans-serif;font-weight:700;letter-spacing:-.02e
 </head>
 <body>
 <div class="loading-overlay" id="loadingOverlay">
-  <div class="orb-container"><div class="orb"></div></div>
+  <div class="orb-container">
+    <svg class="orb-ring" viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#E87722"/>
+          <stop offset="100%" stop-color="#FF9800"/>
+        </linearGradient>
+      </defs>
+      <circle class="orb-ring-bg" cx="80" cy="80" r="70"/>
+      <circle class="orb-ring-fill" id="orbRing" cx="80" cy="80" r="70"/>
+    </svg>
+    <div class="orb"><span class="orb-pct" id="orbPct">0<span class="orb-pct-sym">%</span></span></div>
+  </div>
   <div class="loading-phase" id="loadingPhase">Preparazione analisi...</div>
   <div class="loading-sub" id="loadingSub">Connessione alle AI in corso</div>
-  <div class="loading-progress"><div class="loading-progress-bar" id="loadingBar"></div></div>
 </div>
 <div id="emailGate" class="hidden">
   <div class="container" style="display:flex;align-items:center;justify-content:center;min-height:80vh">
@@ -199,7 +214,7 @@ const body={brand_name:state.brandName,sector:state.sector,user_answers:{}};for(
 try{const resp=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const reader=resp.body.getReader();const dec=new TextDecoder();let buf='';
 while(true){const{done,value}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const lines=buf.split('\n');buf=lines.pop();let et='',ed='';
 for(const l of lines){if(l.startsWith('event: '))et=l.slice(7).trim();else if(l.startsWith('data: ')){ed=l.slice(6);if(et&&ed){try{const d=JSON.parse(ed);if(et==='progress')hProg(d);else if(et==='complete')hComp(d)}catch(e){}}et='';ed=''}}}}catch(e){$('loadingOverlay').classList.remove('visible');alert('Errore. Riprova.')}}
-function hProg(d){const pct=Math.min(100,Math.round((d.step/d.total)*100));$('loadingBar').style.width=pct+'%';const msgs=PM[d.phase]||['Elaborazione...'];const qn=d.qn||1;$('loadingPhase').textContent=msgs[(qn-1)%msgs.length];$('loadingSub').textContent=d.msg||''}
+function hProg(d){const pct=Math.min(100,Math.round((d.step/d.total)*100));const circ=439.8;$('orbRing').style.strokeDashoffset=circ-(circ*pct/100);$('orbPct').innerHTML=pct+'<span class="orb-pct-sym">%</span>';const msgs=PM[d.phase]||['Elaborazione...'];const qn=d.qn||1;$('loadingPhase').textContent=msgs[(qn-1)%msgs.length];$('loadingSub').textContent=d.msg||''}
 function hComp(d){state.results=d;$('loadingOverlay').classList.remove('visible');showGate()}
 function cfs(s){return s>=80?'#4CAF50':s>=60?'#FF9800':'#F44336'}
 function animC(el,target,dur=1500){const st=performance.now();function tick(now){const t=Math.min(1,(now-st)/dur);const ease=1-Math.pow(1-t,3);el.textContent=Math.round(target*ease);if(t<1)requestAnimationFrame(tick)}requestAnimationFrame(tick)}
