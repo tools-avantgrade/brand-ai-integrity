@@ -1,0 +1,718 @@
+"""
+Brand AI Integrity - FastAPI Backend
+SSE streaming for real-time progress, PDF generation, SMTP2GO email.
+"""
+
+import os
+import json
+import time
+import smtplib
+from io import BytesIO
+from datetime import datetime
+from typing import Optional, Dict, Tuple
+
+import asyncio
+
+from google import genai as google_genai
+from google.genai import types as genai_types
+from openai import OpenAI
+import requests
+from dotenv import load_dotenv
+
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.enums import TA_LEFT, TA_CENTER
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+
+load_dotenv()
+
+app = FastAPI(title="Brand AI Integrity")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+MATCH_THRESHOLD = 0.75
+SOCIAL_OPTIONS = ["Instagram", "Facebook", "LinkedIn", "TikTok", "YouTube", "X (Twitter)"]
+
+QUESTIONS = [
+    {"id": "products", "label": "Indica massimo 3 prodotti/servizi principali di {BRAND_NAME}", "type": "text",
+     "ai_prompt": "Quali sono i 3 principali prodotti o servizi offerti da {BRAND_NAME}? Elenca solo i 3 piu importanti."},
+    {"id": "sector", "label": "In che settore opera {BRAND_NAME}?", "type": "text",
+     "ai_prompt": "In quale settore opera {BRAND_NAME}?", "prefill_from": "sector"},
+    {"id": "target", "label": "Qual e il pubblico target principale di {BRAND_NAME}?", "type": "text",
+     "ai_prompt": "Qual e il pubblico target principale di {BRAND_NAME}?"},
+    {"id": "locations", "label": "{BRAND_NAME} ha sedi operative? Se si, dove?", "type": "text",
+     "ai_prompt": "{BRAND_NAME} ha sedi operative? Se si, dove si trovano?"},
+    {"id": "social", "label": "Quali sono i canali social ufficiali di {BRAND_NAME}?", "type": "checkbox",
+     "options": SOCIAL_OPTIONS,
+     "ai_prompt": "Quali sono i canali social ufficiali del brand {BRAND_NAME}? Elenca solo quelli effettivamente attivi."},
+    {"id": "website", "label": "Qual e il sito web ufficiale di {BRAND_NAME}?", "type": "text",
+     "ai_prompt": "Qual e il sito web ufficiale di {BRAND_NAME}?"},
+]
+
+
+def env(key, default=""):
+    return os.environ.get(key, default)
+
+
+# ============================================================
+# BRAVE SEARCH
+# ============================================================
+_cache = {}
+
+
+def brave_search(query, max_results=10):
+    if query in _cache:
+        return _cache[query]
+    try:
+        key = env("BRAVE_API_KEY")
+        if not key:
+            return "", False
+        r = requests.get(
+            "https://api.search.brave.com/res/v1/web/search",
+            headers={
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip",
+                "X-Subscription-Token": key,
+            },
+            params={
+                "q": query,
+                "count": max_results,
+                "search_lang": "it",
+                "text_decorations": False,
+                "safesearch": "moderate",
+            },
+            timeout=12,
+        )
+        r.raise_for_status()
+        results = r.json().get("web", {}).get("results", [])
+        if not results:
+            _cache[query] = ("", False)
+            return "", False
+        fmt = ""
+        for i, x in enumerate(results[:max_results], 1):
+            fmt += f"{i}. {x.get('title', '')}\n{x.get('description', '')}\nFonte: {x.get('url', '')}\n\n"
+        out = (fmt.strip(), True)
+        _cache[query] = out
+        return out
+    except Exception:
+        return "", False
+
+
+# ============================================================
+# AI GENERATION
+# ============================================================
+def _build_prompt(bn, q, sr, ok):
+    if ok and sr:
+        return (
+            f"Rispondi alla seguente domanda su {bn}.\n\n"
+            f"Ho effettuato una ricerca web:\n{sr}\n\n"
+            f"Domanda: {q}\n\n"
+            f"ISTRUZIONI:\n"
+            f"- Usa PRINCIPALMENTE le informazioni web\n"
+            f"- Rispondi in italiano, chiaro e diretto (max 200 parole)\n"
+            f"- Non menzionare la ricerca web"
+        )
+    return (
+        f"Rispondi alla seguente domanda su {bn}.\n\n"
+        f"Domanda: {q}\n\n"
+        f"Rispondi in italiano, chiaro e diretto (max 200 parole)."
+    )
+
+
+def _safety():
+    return [
+        genai_types.SafetySetting(category='HARM_CATEGORY_HATE_SPEECH', threshold='BLOCK_ONLY_HIGH'),
+        genai_types.SafetySetting(category='HARM_CATEGORY_HARASSMENT', threshold='BLOCK_ONLY_HIGH'),
+        genai_types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_ONLY_HIGH'),
+        genai_types.SafetySetting(category='HARM_CATEGORY_DANGEROUS_CONTENT', threshold='BLOCK_ONLY_HIGH'),
+    ]
+
+
+def gen_gemini(bn, q):
+    try:
+        client = google_genai.Client(api_key=env("GEMINI_API_KEY"))
+        sr, ok = brave_search(f"{bn} {q}")
+        r = client.models.generate_content(
+            model=env("GEMINI_MODEL", "gemini-2.0-flash"),
+            contents=_build_prompt(bn, q, sr, ok),
+            config=genai_types.GenerateContentConfig(
+                temperature=0.2, top_p=0.8, top_k=40, max_output_tokens=2048,
+                safety_settings=_safety(),
+            ),
+        )
+        if not r.candidates:
+            return None, "Blocked"
+        if r.text:
+            return r.text.strip(), None
+        return None, "Empty"
+    except Exception as e:
+        return None, str(e)
+
+
+def gen_openai(bn, q):
+    try:
+        c = OpenAI(api_key=env("OPENAI_API_KEY"))
+        sr, ok = brave_search(f"{bn} {q}")
+        r = c.chat.completions.create(
+            model=env("OPENAI_MODEL", "gpt-4o-mini"),
+            messages=[
+                {"role": "system", "content": "Rispondi in modo naturale e diretto in italiano."},
+                {"role": "user", "content": _build_prompt(bn, q, sr, ok)},
+            ],
+            temperature=0.3,
+            max_tokens=1024,
+        )
+        if r and r.choices and r.choices[0].message.content:
+            return r.choices[0].message.content.strip(), None
+        return None, "Empty"
+    except Exception as e:
+        return None, str(e)
+
+
+def gen_reco(sector, ai):
+    p = f'Nel settore "{sector}" in Italia, quale brand consiglieresti e perche?\nRispondi in italiano (max 150 parole).'
+    try:
+        if ai == "gemini":
+            client = google_genai.Client(api_key=env("GEMINI_API_KEY"))
+            r = client.models.generate_content(
+                model=env("GEMINI_MODEL", "gemini-2.0-flash"),
+                contents=p,
+                config=genai_types.GenerateContentConfig(
+                    temperature=0.3, max_output_tokens=1024,
+                    safety_settings=_safety(),
+                ),
+            )
+            if r and r.text:
+                return r.text.strip(), None
+            return None, "Empty"
+        else:
+            c = OpenAI(api_key=env("OPENAI_API_KEY"))
+            r = c.chat.completions.create(
+                model=env("OPENAI_MODEL", "gpt-4o-mini"),
+                messages=[{"role": "user", "content": p}],
+                temperature=0.3,
+                max_tokens=1024,
+            )
+            if r and r.choices:
+                return r.choices[0].message.content.strip(), None
+            return None, "Empty"
+    except Exception as e:
+        return None, str(e)
+
+
+# ============================================================
+# EVALUATION
+# ============================================================
+def eval_batch(question, ai_answers, user_answer, retry=False):
+    names = list(ai_answers.keys())
+    if not names:
+        return {}, None
+
+    block = ""
+    for n in names:
+        label = {"gemini": "Gemini", "openai": "ChatGPT"}.get(n, n)
+        block += f"\nRisposta {label}:\n{ai_answers[n]}\n"
+
+    examples = ", ".join(
+        f'"{n}": {{"score": 0.85, "is_correct": true, "reason": "Breve spiegazione", "key_conflicts": []}}'
+        for n in names
+    )
+
+    p = (
+        f"Valuta la coerenza tra le risposte AI e la ground truth.\n\n"
+        f"Domanda: {question}\n{block}\n"
+        f"Ground truth: {user_answer}\n\n"
+        f"Criteri:\n"
+        f"- corretta (score>=0.75) se allineata semanticamente\n"
+        f"- parziale (0.5-0.74) se info corrette ma troppi dettagli extra\n"
+        f"- sbagliata (<0.5) se contraddice o manca essenziali\n\n"
+    )
+    if retry:
+        p += "GENERA SOLO JSON VALIDO.\n\n"
+    p += f"JSON: {{ {examples} }}"
+
+    try:
+        client = google_genai.Client(api_key=env("GEMINI_API_KEY"))
+        r = client.models.generate_content(
+            model=env("EVALUATOR_MODEL", env("GEMINI_MODEL", "gemini-2.0-flash")),
+            contents=p,
+            config=genai_types.GenerateContentConfig(
+                temperature=0.2,
+                max_output_tokens=2048,
+                response_mime_type="application/json",
+                safety_settings=_safety(),
+            ),
+        )
+        if not r or not r.candidates:
+            return None, "Blocked"
+        t = r.text.strip() if r.text else ""
+        if not t:
+            return None, "Empty"
+        if t.startswith("```"):
+            lines = t.split("\n")
+            t = "\n".join(lines[1:-1]).replace("```json", "").replace("```", "").strip()
+        b = json.loads(t)
+        res = {}
+        for n in names:
+            if n in b:
+                x = b[n]
+                x["score"] = float(x.get("score", 0))
+                x["is_correct"] = bool(x.get("is_correct", False))
+                if isinstance(x.get("reason"), str):
+                    x["reason"] = x["reason"].replace("\n", " ").strip()
+                x.setdefault("key_conflicts", [])
+                res[n] = x
+        return res, None
+    except json.JSONDecodeError:
+        if not retry:
+            return eval_batch(question, ai_answers, user_answer, True)
+        return None, "JSON parse error"
+    except Exception as e:
+        return None, str(e)
+
+
+def gen_comment(bn, sector, summary, eval_results):
+    wrong = []
+    for idx, res in eval_results.items():
+        if not res.get("is_correct", False):
+            i = int(idx)
+            if i < len(QUESTIONS):
+                wrong.append(QUESTIONS[i]["label"].replace("{BRAND_NAME}", bn))
+
+    p = (
+        f'Sei un esperto di brand reputation e AI.\n'
+        f'Risultati Brand AI Integrity per "{bn}" (settore: {sector}):\n'
+        f'- Score: {summary["integrity_score"]}/100\n'
+        f'- Gemini: {summary["ai_scores"].get("gemini", 0)}/100\n'
+        f'- ChatGPT: {summary["ai_scores"].get("openai", 0)}/100\n'
+        f'- Errori: {", ".join(wrong) if wrong else "Nessuna"}\n\n'
+        f'Commento qualitativo italiano (4-5 frasi): risultato generale, aree critiche, 2-3 azioni concrete.\n'
+        f'Professionale ma accessibile. No elenchi puntati.'
+    )
+    try:
+        client = google_genai.Client(api_key=env("GEMINI_API_KEY"))
+        r = client.models.generate_content(
+            model=env("EVALUATOR_MODEL", env("GEMINI_MODEL", "gemini-2.0-flash")),
+            contents=p,
+            config=genai_types.GenerateContentConfig(
+                temperature=0.3, max_output_tokens=1024,
+                safety_settings=_safety(),
+            ),
+        )
+        if r and r.text:
+            return r.text.strip()
+    except Exception:
+        pass
+    return "Analisi non disponibile."
+
+
+# ============================================================
+# PDF
+# ============================================================
+def _cscore(s):
+    if s >= 80:
+        return "#4CAF50"
+    if s >= 60:
+        return "#FF9800"
+    return "#F44336"
+
+
+def _judge(s):
+    if s >= 80:
+        return "ECCELLENTE"
+    if s >= 60:
+        return "BUONO"
+    return "SCARSO"
+
+
+def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, comment):
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=30)
+    st = getSampleStyleSheet()
+    ts = ParagraphStyle("T", parent=st["Heading1"], fontSize=26, textColor=colors.HexColor("#E87722"),
+                        spaceAfter=10, alignment=TA_CENTER, fontName="Helvetica-Bold")
+    ss = ParagraphStyle("S", parent=st["Normal"], fontSize=13, textColor=colors.HexColor("#666"),
+                        spaceAfter=20, alignment=TA_CENTER)
+    hs = ParagraphStyle("H", parent=st["Heading2"], fontSize=17, textColor=colors.HexColor("#E87722"),
+                        spaceAfter=14, fontName="Helvetica-Bold")
+    shs = ParagraphStyle("SH", parent=st["Heading3"], fontSize=13, textColor=colors.HexColor("#333"),
+                         spaceAfter=10, fontName="Helvetica-Bold")
+    bs = ParagraphStyle("BX", parent=st["Normal"], fontSize=9, leading=13)
+    ns = st["Normal"]
+
+    story = []
+    story.append(Spacer(1, 0.4 * inch))
+    story.append(Paragraph("BRAND AI INTEGRITY REPORT", ts))
+    story.append(Paragraph(f"Brand: {bn} | Settore: {sector}", ss))
+    story.append(Paragraph(f"Data: {datetime.now().strftime('%d/%m/%Y - %H:%M')}", ss))
+    story.append(Spacer(1, 0.4 * inch))
+    story.append(Paragraph("EXECUTIVE SUMMARY", hs))
+
+    sc = summary["integrity_score"]
+    ai_sc = summary.get("ai_scores", {})
+    data = [
+        ["METRICA", "VALORE", "VALUTAZIONE"],
+        ["Brand AI Integrity Score", f"{sc}/100", _judge(sc)],
+        ["", "", ""],
+        ["Score Gemini", f"{ai_sc.get('gemini', 0)}/100", _judge(ai_sc.get("gemini", 0))],
+        ["Score ChatGPT", f"{ai_sc.get('openai', 0)}/100", _judge(ai_sc.get("openai", 0))],
+        ["", "", ""],
+        ["Domande Totali", str(summary["total"]), ""],
+        ["Corrette", str(summary["correct"]), ""],
+        ["Da Migliorare", str(summary["incorrect"]), ""],
+    ]
+    t = Table(data, colWidths=[2.5 * inch, 1.5 * inch, 2 * inch])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E87722")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 11),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+        ("TOPPADDING", (0, 0), (-1, 0), 10),
+        ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor(_cscore(sc))),
+        ("TEXTCOLOR", (0, 1), (-1, 1), colors.white),
+        ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 1), (-1, 1), 13),
+        ("BACKGROUND", (0, 3), (-1, 3), colors.HexColor(_cscore(ai_sc.get("gemini", 0)))),
+        ("TEXTCOLOR", (0, 3), (-1, 3), colors.white),
+        ("BACKGROUND", (0, 4), (-1, 4), colors.HexColor(_cscore(ai_sc.get("openai", 0)))),
+        ("TEXTCOLOR", (0, 4), (-1, 4), colors.white),
+        ("BACKGROUND", (0, 6), (-1, -1), colors.beige),
+        ("GRID", (0, 0), (-1, -1), 1, colors.grey),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 0.3 * inch))
+
+    if comment:
+        story.append(Paragraph("ANALISI QUALITATIVA", hs))
+        story.append(Paragraph(comment, ns))
+        story.append(Spacer(1, 0.3 * inch))
+
+    story.append(PageBreak())
+    story.append(Paragraph("ANALISI DETTAGLIATA", hs))
+
+    for idx_s in sorted(eval_results.keys(), key=lambda x: int(x)):
+        idx = int(idx_s)
+        result = eval_results[idx_s]
+        if idx >= len(QUESTIONS):
+            continue
+        q = QUESTIONS[idx]
+        qt = q["label"].replace("{BRAND_NAME}", bn)
+        avg = result.get("average_score", 0)
+        ic = result.get("is_correct", False)
+        story.append(Paragraph(f"<b>DOMANDA {idx + 1}:</b> {qt}", shs))
+        scl = "#4CAF50" if ic else "#F44336"
+        std = [["Score", f"{avg:.2f}/1.00", "CORRETTA" if ic else "DA MIGLIORARE"]]
+        stt = Table(std, colWidths=[1.5 * inch, 1.5 * inch, 2 * inch])
+        stt.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(scl)),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("GRID", (0, 0), (-1, -1), 1, colors.white),
+        ]))
+        story.append(stt)
+        story.append(Spacer(1, 0.1 * inch))
+
+        ua = str(user_answers.get(str(idx), user_answers.get(idx, "N/A")))
+        story.append(Paragraph("<b>Ground Truth:</b>", ns))
+        gp = Paragraph(ua, bs)
+        gt = Table([[gp]], colWidths=[4.5 * inch])
+        gt.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#E8F5E9")),
+            ("BOX", (0, 0), (-1, -1), 2, colors.HexColor("#4CAF50")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ]))
+        story.append(gt)
+        story.append(Spacer(1, 0.15 * inch))
+
+        aa = ai_answers.get(str(idx), ai_answers.get(idx, {}))
+        if isinstance(aa, dict):
+            for an, al in [("gemini", "Gemini"), ("openai", "ChatGPT")]:
+                if an in aa and an in result:
+                    ar = result[an]
+                    asc = ar.get("score", 0)
+                    bg = "#E8F5E9" if asc >= 0.75 else ("#FFF3E0" if asc >= 0.5 else "#FFEBEE")
+                    bd = "#4CAF50" if asc >= 0.75 else ("#FF9800" if asc >= 0.5 else "#F44336")
+                    story.append(Paragraph(f"<b>{al}</b> (Score: {asc:.2f})", ns))
+                    ap = Paragraph(aa[an], bs)
+                    at = Table([[ap]], colWidths=[4.5 * inch])
+                    at.setStyle(TableStyle([
+                        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(bg)),
+                        ("BOX", (0, 0), (-1, -1), 2, colors.HexColor(bd)),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                        ("TOPPADDING", (0, 0), (-1, -1), 10),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                    ]))
+                    story.append(at)
+                    story.append(Paragraph(f"<i>{ar.get('reason', '')}</i>", ns))
+                    story.append(Spacer(1, 0.1 * inch))
+        story.append(Spacer(1, 0.3 * inch))
+
+    if reco:
+        story.append(PageBreak())
+        story.append(Paragraph("CHI CONSIGLIANO LE AI?", hs))
+        story.append(Paragraph(f'Domanda: "Nel settore {sector}, quale brand consiglieresti?"', ns))
+        story.append(Spacer(1, 0.15 * inch))
+        for an, al in [("gemini", "Gemini"), ("openai", "ChatGPT")]:
+            if an in reco:
+                story.append(Paragraph(f"<b>{al}:</b>", ns))
+                story.append(Paragraph(reco[an], bs))
+                story.append(Spacer(1, 0.15 * inch))
+
+    story.append(PageBreak())
+    story.append(Spacer(1, 1 * inch))
+    story.append(Paragraph("Report generato da Brand AI Integrity", ns))
+    story.append(Paragraph("Sviluppato dal <b>Team Innovation di AvantGrade.com</b>", ns))
+    story.append(Spacer(1, 0.5 * inch))
+    ctas = ParagraphStyle("CTA", parent=ns, fontSize=12, textColor=colors.white,
+                          alignment=TA_CENTER, fontName="Helvetica-Bold")
+    cta_link = '<link href="https://www.avantgrade.com/schedule-a-call" color="white">Vuoi migliorare? Parliamone insieme</link>'
+    ct = Table([[Paragraph(cta_link, ctas)]], colWidths=[5 * inch])
+    ct.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#E87722")),
+        ("BOX", (0, 0), (-1, -1), 2, colors.HexColor("#CF6610")),
+        ("TOPPADDING", (0, 0), (-1, -1), 15),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 15),
+        ("LEFTPADDING", (0, 0), (-1, -1), 20),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 20),
+    ]))
+    story.append(ct)
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+# ============================================================
+# EMAIL
+# ============================================================
+def send_email(to, bn, pdf_buf):
+    h = env("SMTP2GO_HOST", "mail.smtp2go.com")
+    p = int(env("SMTP2GO_PORT", "587"))
+    u = env("SMTP2GO_USERNAME")
+    pw = env("SMTP2GO_PASSWORD")
+    s = env("SMTP2GO_SENDER", "noreply@avantgrade.com")
+    if not u or not pw:
+        return False, "SMTP2GO non configurato"
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = s
+        msg["To"] = to
+        msg["Subject"] = f"Brand AI Integrity Report - {bn}"
+        html = (
+            f'<html><body style="font-family:Arial;color:#333;max-width:600px;margin:0 auto;">'
+            f'<div style="background:linear-gradient(135deg,#E87722,#FF9800);padding:30px;text-align:center;border-radius:10px 10px 0 0;">'
+            f'<h1 style="color:white;margin:0;">Brand AI Integrity Report</h1>'
+            f'<p style="color:rgba(255,255,255,.9);margin:10px 0 0;">Brand: {bn}</p></div>'
+            f'<div style="padding:30px;background:#f9f9f9;">'
+            f'<p>In allegato il report completo del <b>Brand AI Integrity Score</b> per <b>{bn}</b>.</p>'
+            f'<hr style="border:1px solid #eee;margin:20px 0;">'
+            f'<p style="text-align:center;"><a href="https://www.avantgrade.com/schedule-a-call" '
+            f'style="background:#E87722;color:white;padding:12px 30px;text-decoration:none;border-radius:8px;font-weight:bold;">'
+            f'Parliamone</a></p></div></body></html>'
+        )
+        msg.attach(MIMEText(html, "html"))
+        pdf_buf.seek(0)
+        att = MIMEApplication(pdf_buf.read(), _subtype="pdf")
+        att.add_header("Content-Disposition", "attachment", filename=f"Brand_AI_Integrity_{bn}.pdf")
+        msg.attach(att)
+        with smtplib.SMTP(h, p) as srv:
+            srv.starttls()
+            srv.login(u, pw)
+            srv.sendmail(s, to, msg.as_string())
+        return True, "OK"
+    except Exception as e:
+        return False, str(e)
+
+
+# ============================================================
+# ROUTES
+# ============================================================
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    with open("static/index.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+
+@app.get("/api/questions")
+async def get_questions():
+    return {"questions": QUESTIONS, "social_options": SOCIAL_OPTIONS}
+
+
+class AnalyzeReq(BaseModel):
+    brand_name: str
+    sector: str
+    user_answers: dict
+
+
+@app.post("/api/analyze")
+async def analyze(body: AnalyzeReq):
+    bn = body.brand_name
+    sector = body.sector
+    ua = body.user_answers
+
+    async def stream():
+        def sse(ev, d):
+            return f"event: {ev}\ndata: {json.dumps(d, ensure_ascii=False)}\n\n"
+
+        ai_ans = {}
+        errors = []
+        total = len(QUESTIONS) * 2 + len(QUESTIONS) + 3
+        step = 0
+
+        # Phase 1: Generate AI answers
+        for idx, q in enumerate(QUESTIONS):
+            ai_ans[idx] = {}
+            ap = q["ai_prompt"].replace("{BRAND_NAME}", bn)
+
+            yield sse("progress", {
+                "step": step, "total": total, "phase": "gemini",
+                "qn": idx + 1, "qt": len(QUESTIONS),
+                "msg": f"Gemini analizza domanda {idx + 1}...",
+            })
+            a, e = await asyncio.to_thread(gen_gemini, bn, ap)
+            if e:
+                errors.append(f"Gemini Q{idx + 1}: {e}")
+            else:
+                ai_ans[idx]["gemini"] = a
+            step += 1
+
+            yield sse("progress", {
+                "step": step, "total": total, "phase": "chatgpt",
+                "qn": idx + 1, "qt": len(QUESTIONS),
+                "msg": f"ChatGPT cerca info domanda {idx + 1}...",
+            })
+            a, e = await asyncio.to_thread(gen_openai, bn, ap)
+            if e:
+                errors.append(f"ChatGPT Q{idx + 1}: {e}")
+            else:
+                ai_ans[idx]["openai"] = a
+            step += 1
+
+        # Phase 2: Evaluate
+        ev_res = {}
+        for idx in sorted(ai_ans.keys()):
+            yield sse("progress", {
+                "step": step, "total": total, "phase": "eval",
+                "qn": idx + 1, "qt": len(QUESTIONS),
+                "msg": f"Valutazione domanda {idx + 1}...",
+            })
+            q = QUESTIONS[idx]
+            qt = q["ai_prompt"].replace("{BRAND_NAME}", bn)
+            uas = ua.get(str(idx), "")
+            b, be = await asyncio.to_thread(eval_batch, qt, ai_ans[idx], uas)
+            ev_res[idx] = {}
+            scores = []
+            if be:
+                errors.append(f"Eval Q{idx + 1}: {be}")
+            else:
+                for an in ["gemini", "openai"]:
+                    if an in b:
+                        ev_res[idx][an] = b[an]
+                        scores.append(b[an]["score"])
+            if scores:
+                avg = sum(scores) / len(scores)
+                ev_res[idx]["average_score"] = avg
+                ev_res[idx]["is_correct"] = avg >= MATCH_THRESHOLD
+            step += 1
+
+        # Phase 3: Recommendation
+        yield sse("progress", {
+            "step": step, "total": total, "phase": "recommendation",
+            "msg": "Chi consigliano le AI?...",
+        })
+        reco = {}
+        for an in ["gemini", "openai"]:
+            a, e = await asyncio.to_thread(gen_reco, sector, an)
+            if not e and a:
+                reco[an] = a
+        step += 2
+
+        # Phase 4: Summary
+        ails = {"gemini": [], "openai": []}
+        for r in ev_res.values():
+            for an in ["gemini", "openai"]:
+                if an in r and "score" in r[an]:
+                    ails[an].append(r[an]["score"])
+        aiavg = {
+            an: round(sum(sc) / len(sc) * 100) if sc else 0
+            for an, sc in ails.items()
+        }
+        integrity = round(sum(aiavg.values()) / len(aiavg)) if aiavg else 0
+        correct = sum(1 for r in ev_res.values() if r.get("is_correct", False))
+        summ = {
+            "total": len(ev_res),
+            "correct": correct,
+            "incorrect": len(ev_res) - correct,
+            "integrity_score": integrity,
+            "ai_scores": aiavg,
+        }
+
+        # Phase 5: Qualitative comment
+        yield sse("progress", {
+            "step": step, "total": total, "phase": "comment",
+            "msg": "Generazione analisi qualitativa...",
+        })
+        comment = await asyncio.to_thread(gen_comment, bn, sector, summ, {str(k): v for k, v in ev_res.items()})
+
+        yield sse("complete", {
+            "summary": summ,
+            "eval_results": {str(k): v for k, v in ev_res.items()},
+            "ai_answers": {str(k): v for k, v in ai_ans.items()},
+            "recommendation": reco,
+            "qualitative_comment": comment,
+            "errors": errors,
+        })
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+class EmailReq(BaseModel):
+    email: str
+    brand_name: str
+    sector: str
+    summary: dict
+    eval_results: dict
+    user_answers: dict
+    ai_answers: dict
+    recommendation: dict
+    qualitative_comment: str
+
+
+@app.post("/api/send-email")
+async def email_route(b: EmailReq):
+    pdf = make_pdf(
+        b.brand_name, b.sector, b.summary, b.eval_results,
+        b.user_answers, b.ai_answers, b.recommendation, b.qualitative_comment,
+    )
+    ok, msg = send_email(b.email, b.brand_name, pdf)
+    return {"success": ok, "message": msg}
+
+
+@app.post("/api/download-pdf")
+async def pdf_route(b: EmailReq):
+    pdf = make_pdf(
+        b.brand_name, b.sector, b.summary, b.eval_results,
+        b.user_answers, b.ai_answers, b.recommendation, b.qualitative_comment,
+    )
+    return Response(
+        content=pdf.read(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=Brand_AI_Integrity_{b.brand_name}.pdf"},
+    )

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brand AI Integrity</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0a0d14;--surface:rgba(18,22,33,.85);--surface2:rgba(25,30,45,.7);--border:rgba(232,119,34,.12);--border-hover:rgba(232,119,34,.35);--orange:#E87722;--orange-dark:#CF6610;--orange-light:#FF9800;--green:#4CAF50;--yellow:#FF9800;--red:#F44336;--text:#e8e8f0;--text2:#9a9ab0;--text3:#666680;--radius:16px;--radius-sm:10px}
+html{scroll-behavior:smooth}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;line-height:1.6}
+body::before{content:'';position:fixed;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(ellipse at 30% 20%,rgba(232,119,34,.06) 0%,transparent 50%),radial-gradient(ellipse at 70% 80%,rgba(100,60,200,.04) 0%,transparent 50%);pointer-events:none;z-index:0}
+h1,h2,h3,h4{font-family:'Outfit',sans-serif;font-weight:700;letter-spacing:-.02em}
+.container{max-width:720px;margin:0 auto;padding:24px 20px;position:relative;z-index:1}
+@media(min-width:768px){.container{padding:40px 32px}}
+.header{text-align:center;padding:48px 0 32px;animation:fadeIn .8s ease}
+.header .logo{font-family:'Outfit';font-size:clamp(1.6rem,4vw,2.2rem);font-weight:900;background:linear-gradient(135deg,var(--orange),var(--orange-light));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header p{color:var(--text2);font-size:1.05rem;margin-top:8px}
+.card{background:var(--surface);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radius);padding:32px;margin-bottom:24px;transition:border-color .3s,box-shadow .3s}
+.card:hover{border-color:var(--border-hover);box-shadow:0 8px 40px rgba(0,0,0,.3)}
+.card h2{font-size:1.25rem;margin-bottom:16px}
+.steps{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:40px}
+.step-dot{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Outfit';font-weight:700;font-size:.9rem;transition:all .4s ease;border:2px solid var(--border)}
+.step-dot.active{background:var(--orange);border-color:var(--orange);color:white;box-shadow:0 0 20px rgba(232,119,34,.4)}
+.step-dot.done{background:var(--green);border-color:var(--green);color:white}
+.step-dot.pending{color:var(--text3)}
+.step-line{width:60px;height:2px;background:var(--border);transition:background .4s}
+.step-line.done{background:var(--green)}
+.step-label{font-size:.75rem;color:var(--text3);text-align:center;margin-top:6px}
+.form-group{margin-bottom:24px}
+.form-group label{display:block;font-family:'Outfit';font-weight:600;font-size:.9rem;color:var(--text);margin-bottom:8px}
+.form-group input[type="text"],.form-group input[type="email"],.form-group textarea{width:100%;padding:14px 18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius-sm);color:var(--text);font-family:'DM Sans';font-size:.95rem;transition:border-color .3s,box-shadow .3s;outline:none;resize:vertical}
+.form-group input:focus,.form-group textarea:focus{border-color:var(--orange);box-shadow:0 0 0 3px rgba(232,119,34,.15)}
+.form-group textarea{min-height:100px}
+.form-group input::placeholder,.form-group textarea::placeholder{color:var(--text3)}
+.pills{display:flex;flex-wrap:wrap;gap:10px}
+.pill{padding:10px 18px;border-radius:50px;border:1.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);color:var(--text2);font-size:.88rem;font-weight:500;cursor:pointer;transition:all .25s ease;user-select:none}
+.pill:hover{border-color:rgba(232,119,34,.4);color:var(--text)}
+.pill.active{background:rgba(232,119,34,.15);border-color:var(--orange);color:var(--orange);font-weight:600}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:14px 32px;border-radius:var(--radius-sm);font-family:'Outfit';font-weight:700;font-size:1rem;border:none;cursor:pointer;transition:all .3s ease;text-decoration:none}
+.btn-primary{background:linear-gradient(135deg,var(--orange),var(--orange-light));color:white;box-shadow:0 4px 20px rgba(232,119,34,.3)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(232,119,34,.4)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-secondary{background:rgba(255,255,255,.06);color:var(--text);border:1px solid rgba(255,255,255,.1)}
+.btn-secondary:hover{background:rgba(255,255,255,.1)}
+.btn-full{width:100%}
+.loading-overlay{position:fixed;inset:0;background:rgba(10,13,20,.92);backdrop-filter:blur(10px);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1000;opacity:0;pointer-events:none;transition:opacity .4s ease}
+.loading-overlay.visible{opacity:1;pointer-events:all}
+.orb-container{position:relative;width:120px;height:120px;margin-bottom:40px}
+.orb{width:120px;height:120px;border-radius:50%;background:radial-gradient(circle at 30% 30%,var(--orange-light),var(--orange),var(--orange-dark));box-shadow:0 0 60px rgba(232,119,34,.4),inset 0 0 30px rgba(255,255,255,.1);animation:orbPulse 2s ease-in-out infinite,orbRotate 8s linear infinite}
+.orb::after{content:'';position:absolute;top:10%;left:15%;width:30%;height:20%;border-radius:50%;background:radial-gradient(ellipse,rgba(255,255,255,.3),transparent);transform:rotate(-20deg)}
+@keyframes orbPulse{0%,100%{transform:scale(1);box-shadow:0 0 60px rgba(232,119,34,.4)}50%{transform:scale(1.08);box-shadow:0 0 80px rgba(232,119,34,.6)}}
+@keyframes orbRotate{from{filter:hue-rotate(0deg)}to{filter:hue-rotate(15deg)}}
+.loading-phase{font-family:'Outfit';font-size:1.15rem;font-weight:600;color:var(--text);text-align:center;min-height:30px;transition:opacity .3s}
+.loading-sub{font-size:.9rem;color:var(--text2);margin-top:8px;text-align:center}
+.loading-progress{width:280px;height:4px;background:rgba(255,255,255,.08);border-radius:4px;margin-top:24px;overflow:hidden}
+.loading-progress-bar{height:100%;background:linear-gradient(90deg,var(--orange),var(--orange-light));border-radius:4px;transition:width .5s ease;width:0%}
+.score-hero{text-align:center;padding:48px 24px;border-radius:20px;position:relative;overflow:hidden;margin-bottom:24px}
+.score-hero::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.08) 0%,transparent 60%);pointer-events:none}
+.score-hero .label{font-size:1rem;color:rgba(255,255,255,.8);font-weight:400;margin-bottom:8px}
+.score-hero .value{font-family:'Outfit';font-size:clamp(4rem,10vw,6rem);font-weight:900;color:white;text-shadow:0 4px 20px rgba(0,0,0,.3);line-height:1}
+.score-hero .suffix{font-size:.4em;font-weight:400;opacity:.7}
+.score-hero .judgment{font-size:1.3rem;font-weight:700;color:white;margin-top:8px}
+.ai-scores{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+.ai-score-card{text-align:center;padding:28px 16px;border-radius:var(--radius);position:relative;overflow:hidden;transition:transform .3s,box-shadow .3s}
+.ai-score-card:hover{transform:translateY(-4px);box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.ai-score-card .ai-name{font-size:.95rem;color:rgba(255,255,255,.85);font-weight:500;margin-bottom:8px}
+.ai-score-card .ai-value{font-family:'Outfit';font-size:2.8rem;font-weight:800;color:white}
+.detail-card{background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:12px;overflow:hidden;border:1px solid var(--border);transition:border-color .3s}
+.detail-card:hover{border-color:var(--border-hover)}
+.detail-header{padding:16px 20px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.detail-header .q-text{font-size:.9rem;font-weight:500;flex:1}
+.detail-header .status-badge{padding:4px 12px;border-radius:50px;font-size:.75rem;font-weight:700;white-space:nowrap}
+.detail-header .chevron{transition:transform .3s;color:var(--text3);font-size:1.2rem}
+.detail-card.open .chevron{transform:rotate(180deg)}
+.detail-body{max-height:0;overflow:hidden;transition:max-height .4s ease}
+.detail-card.open .detail-body{max-height:2000px}
+.detail-content{padding:0 20px 20px}
+.answer-block{background:rgba(255,255,255,.03);border-radius:8px;padding:14px;margin:8px 0;border-left:3px solid var(--border);font-size:.88rem;line-height:1.6;color:var(--text2)}
+.answer-block.ground-truth{border-left-color:var(--green);background:rgba(76,175,80,.06)}
+.reco-card{background:var(--surface);border:2px solid rgba(232,119,34,.2);border-radius:var(--radius);padding:28px;margin-bottom:16px}
+.badge{display:inline-block;padding:4px 12px;border-radius:50px;font-size:.8rem;font-weight:700}
+.badge-yes{background:rgba(76,175,80,.15);color:var(--green)}
+.badge-no{background:rgba(255,152,0,.15);color:var(--yellow)}
+.msg-box{padding:20px;border-radius:var(--radius-sm);text-align:center;font-size:1.05rem;font-weight:500;margin:16px 0;animation:fadeIn .5s ease}
+.cta-section{background:linear-gradient(135deg,var(--orange) 0%,#F57C00 50%,var(--orange-light) 100%);background-size:200% 200%;animation:gradShift 6s ease infinite;padding:48px 32px;border-radius:20px;text-align:center;margin:32px 0;box-shadow:0 8px 40px rgba(232,119,34,.25)}
+.cta-section h2{color:white;font-size:1.5rem;margin-bottom:12px}
+.cta-section p{color:rgba(255,255,255,.9);font-size:1.05rem;margin-bottom:24px}
+.cta-section .btn-white{display:inline-block;background:white;color:var(--orange);font-weight:700;padding:14px 36px;border-radius:var(--radius-sm);text-decoration:none;transition:transform .2s,box-shadow .2s}
+.cta-section .btn-white:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.checkbox-row{display:flex;align-items:flex-start;gap:10px;margin:16px 0}
+.checkbox-row input[type="checkbox"]{width:18px;height:18px;accent-color:var(--orange);margin-top:2px;flex-shrink:0}
+.checkbox-row label{font-size:.85rem;color:var(--text2);cursor:pointer}
+.email-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px;margin-bottom:24px}
+.qual-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px;margin-bottom:24px}
+.qual-box p{color:var(--text2);font-size:.95rem;line-height:1.8}
+.footer{text-align:center;padding:32px 0;color:var(--text3);font-size:.85rem}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+@keyframes gradShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+.anim-in{animation:fadeInUp .6s ease both}
+.anim-in-1{animation-delay:.1s}.anim-in-2{animation-delay:.2s}.anim-in-3{animation-delay:.3s}
+.anim-in-4{animation-delay:.4s}.anim-in-5{animation-delay:.5s}
+.hidden{display:none!important}
+.q-divider{height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.06),transparent);margin:8px 0 24px}
+</style>
+</head>
+<body>
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="orb-container"><div class="orb"></div></div>
+  <div class="loading-phase" id="loadingPhase">Preparazione analisi...</div>
+  <div class="loading-sub" id="loadingSub">Connessione alle AI in corso</div>
+  <div class="loading-progress"><div class="loading-progress-bar" id="loadingBar"></div></div>
+</div>
+<div id="emailGate" class="hidden">
+  <div class="container" style="display:flex;align-items:center;justify-content:center;min-height:80vh">
+    <div class="card anim-in" style="text-align:center;padding:48px 40px;max-width:480px;width:100%">
+      <div style="font-size:3rem;margin-bottom:16px">🎯</div>
+      <h2 style="font-size:1.6rem;margin-bottom:12px">Il tuo report è pronto!</h2>
+      <p style="color:var(--text2);line-height:1.7;margin-bottom:32px">Inserisci la tua email per visualizzare i risultati completi e ricevere il report in PDF.</p>
+      <div class="form-group" style="text-align:left">
+        <label>Il tuo indirizzo email</label>
+        <input type="email" id="gateEmail" placeholder="nome@azienda.com">
+      </div>
+      <div class="checkbox-row" style="margin-bottom:24px">
+        <input type="checkbox" id="gatePrivacy" checked>
+        <label for="gatePrivacy">Acconsento al trattamento dei dati personali ai sensi della normativa vigente</label>
+      </div>
+      <button class="btn btn-primary btn-full" id="btnGate">Visualizza i Risultati &rarr;</button>
+      <div id="gateStatus" style="margin-top:12px;font-size:.9rem"></div>
+    </div>
+  </div>
+</div>
+<div class="container">
+  <div class="header"><div class="logo">Brand AI Integrity</div><p>Misura quanto le AI conoscono davvero il tuo brand.</p></div>
+  <div class="steps">
+    <div><div class="step-dot active" id="dot1">1</div><div class="step-label">Brand</div></div>
+    <div class="step-line" id="line1"></div>
+    <div><div class="step-dot pending" id="dot2">2</div><div class="step-label">Domande</div></div>
+    <div class="step-line" id="line2"></div>
+    <div><div class="step-dot pending" id="dot3">3</div><div class="step-label">Risultati</div></div>
+  </div>
+  <div id="step1">
+    <div class="card anim-in"><h2>Come funziona?</h2>
+      <p style="color:var(--text2);line-height:1.7">Questo strumento misura quanto le intelligenze artificiali conoscono il tuo brand. In <strong>3 semplici passi</strong>: inserisci il nome del brand, rispondi a poche domande, e scopri se <strong>Gemini</strong> e <strong>ChatGPT</strong> raccontano la verita su di te. Il risultato e il tuo <strong style="color:var(--orange)">Brand AI Integrity Score</strong>: da 0 a 100.</p></div>
+    <div class="card anim-in anim-in-1"><h2>Iniziamo</h2>
+      <div class="form-group"><label>Nome del Brand</label><input type="text" id="brandName" placeholder="es. Nike, Apple, AvantGrade..."></div>
+      <div class="form-group"><label>Settore di riferimento</label><input type="text" id="sectorName" placeholder="es. Digital Marketing, Moda, Food & Beverage..."></div>
+      <button class="btn btn-primary btn-full" id="btnStep1" disabled>Continua &rarr;</button></div>
+  </div>
+  <div id="step2" class="hidden">
+    <div class="card anim-in">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h2 style="margin:0">Rispondi su <span id="brandTitle" style="color:var(--orange)"></span></h2>
+        <button class="btn btn-secondary" id="btnBack1" style="padding:8px 16px;font-size:.85rem">&larr; Indietro</button></div>
+      <p style="color:var(--text2);margin-bottom:24px">Inserisci le risposte corrette. Le AI cercheranno queste informazioni sul web.</p>
+      <div id="questionsContainer"></div>
+      <button class="btn btn-primary btn-full" id="btnAnalyze" disabled>🚀 Analizza con le AI</button></div>
+  </div>
+  <div id="step3" class="hidden">
+    <div class="score-hero anim-in" id="scoreHero"><div class="label">Punteggio complessivo di Brand AI Integrity</div><div class="value"><span id="scoreValue">0</span><span class="suffix">/100</span></div><div class="judgment" id="scoreJudgment"></div></div>
+    <div class="msg-box anim-in anim-in-1" id="scoreMessage"></div>
+    <div class="ai-scores anim-in anim-in-2"><div class="ai-score-card" id="geminiCard"><div class="ai-name">Gemini</div><div class="ai-value"><span id="geminiScore">0</span>/100</div></div><div class="ai-score-card" id="chatgptCard"><div class="ai-name">ChatGPT</div><div class="ai-value"><span id="chatgptScore">0</span>/100</div></div></div>
+    <div class="qual-box anim-in anim-in-3" id="qualBox"><h3 style="color:var(--orange);margin-bottom:6px">Analisi e Suggerimenti</h3><p style="color:var(--text3);font-size:.82rem;margin-bottom:14px">Valutazione qualitativa generata dall'AI sulla base dei risultati, con indicazioni pratiche per migliorare il tuo score.</p><p id="qualText"></p></div>
+    <h3 class="anim-in anim-in-3" style="margin-bottom:8px;color:var(--text2)">Dettagli per Domanda</h3>
+    <p class="anim-in anim-in-3" style="color:var(--text3);font-size:.9rem;line-height:1.65;margin-bottom:20px">Per ogni domanda abbiamo confrontato le risposte di Gemini e ChatGPT con la ground truth che hai fornito. Clicca su una domanda per espandere il dettaglio.</p>
+    <div id="detailsContainer" class="anim-in anim-in-4"></div>
+    <div id="recoSection" class="anim-in anim-in-5"></div>
+    <div class="cta-section" style="margin-top:32px"><h2>Vuoi migliorare il tuo Score?</h2><p>Il Team Innovation di AvantGrade puo aiutarti a ottimizzare la rappresentazione del tuo brand nelle AI.</p>
+      <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:8px">
+        <a href="https://www.avantgrade.com/schedule-a-call" class="btn-white" target="_blank">Parliamone insieme &rarr;</a>
+        <button class="btn-white" id="btnDownloadPdf" style="background:rgba(255,255,255,.15);color:white;border:2px solid rgba(255,255,255,.4);cursor:pointer">⬇ Scarica il Report PDF</button>
+      </div>
+      <div id="pdfStatus" style="margin-top:12px;font-size:.9rem;color:rgba(255,255,255,.8)"></div>
+    </div>
+  </div>
+  <div class="footer">Sviluppato dal <strong>Team Innovation di AvantGrade.com</strong></div>
+</div>
+<script>
+const state={brandName:'',sector:'',email:'',userAnswers:{},questions:[],socialOptions:[],results:null};
+const $=id=>document.getElementById(id);
+function showStep(n){[$('step1'),$('step2'),$('step3')].forEach((s,i)=>s.classList.toggle('hidden',i!==n-1));$('emailGate').classList.add('hidden');['dot1','dot2','dot3'].forEach((id,i)=>{$(id).className='step-dot '+(i<n-1?'done':i===n-1?'active':'pending')});['line1','line2'].forEach((id,i)=>{$(id).className='step-line'+(i<n-1?' done':'')});window.scrollTo({top:0,behavior:'smooth'})}
+function showGate(){[$('step1'),$('step2'),$('step3')].forEach(s=>s.classList.add('hidden'));$('emailGate').classList.remove('hidden');['dot1','dot2','dot3'].forEach((id,i)=>{$(id).className='step-dot '+(i<2?'done':'active')});['line1','line2'].forEach((id,i)=>{$(id).className='step-line done'});window.scrollTo({top:0,behavior:'smooth'})}
+$('brandName').addEventListener('input',chk1);$('sectorName').addEventListener('input',chk1);
+function chk1(){state.brandName=$('brandName').value.trim();state.sector=$('sectorName').value.trim();$('btnStep1').disabled=!state.brandName||!state.sector}
+$('btnStep1').addEventListener('click',async()=>{try{const r=await fetch('/api/questions');const d=await r.json();state.questions=d.questions;state.socialOptions=d.social_options}catch(e){alert('Errore caricamento domande.');return}buildQ();$('brandTitle').textContent=state.brandName;showStep(2)});
+function buildQ(){const c=$('questionsContainer');c.innerHTML='';state.userAnswers={};state.questions.forEach((q,i)=>{const lb=q.label.replace('{BRAND_NAME}',state.brandName);const d=document.createElement('div');d.className='form-group';
+if(q.prefill_from==='sector'){state.userAnswers[i]=state.sector;d.innerHTML=`<label>${lb}</label><input type="text" value="${state.sector}" disabled style="opacity:.6">`;c.appendChild(d);c.appendChild(Object.assign(document.createElement('div'),{className:'q-divider'}));return}
+if(q.type==='checkbox'){state.userAnswers[i]='';d.innerHTML=`<label>${lb}</label><div class="pills" id="pills_${i}"></div>`;c.appendChild(d);const pd=$(`pills_${i}`);(q.options||state.socialOptions).forEach(opt=>{const p=document.createElement('div');p.className='pill';p.textContent=opt;p.addEventListener('click',()=>{p.classList.toggle('active');const a=[];pd.querySelectorAll('.pill.active').forEach(x=>a.push(x.textContent));state.userAnswers[i]=a.join(', ');chk2()});pd.appendChild(p)});c.appendChild(Object.assign(document.createElement('div'),{className:'q-divider'}));return}
+d.innerHTML=`<label>${lb}</label><textarea id="qa_${i}" placeholder="Scrivi qui la risposta corretta..."></textarea>`;c.appendChild(d);c.appendChild(Object.assign(document.createElement('div'),{className:'q-divider'}));const ta=document.getElementById(`qa_${i}`);if(ta)ta.addEventListener('input',()=>{state.userAnswers[i]=ta.value.trim();chk2()})})}
+function chk2(){let v=true;state.questions.forEach((q,i)=>{const val=state.userAnswers[i];if(!val||(typeof val==='string'&&!val.trim()))v=false});$('btnAnalyze').disabled=!v}
+$('btnBack1').addEventListener('click',()=>showStep(1));
+$('btnAnalyze').addEventListener('click',()=>runAnalysis());
+const PM={gemini:['Gemini studia il tuo brand... 🔮','Gemini consulta il web... 🌐','Gemini elabora... ⚡','Gemini ragiona... 🧠','Gemini quasi pronto... ✨'],chatgpt:['ChatGPT cerca info... 💬','ChatGPT naviga il web... 🕵️','ChatGPT analizza... 🔍','ChatGPT prepara la risposta... ✨','ChatGPT ci pensa... 🤔'],eval:['Confrontiamo le risposte... ⚖️','Il giudice AI valuta... 📊','Calcoliamo il tuo score... 🎯'],recommendation:['Chi consigliano le AI? 🏆'],comment:['Analisi qualitativa... ✨']};
+async function runAnalysis(){$('loadingOverlay').classList.add('visible');$('loadingPhase').textContent='Preparazione analisi...';$('loadingSub').textContent='Connessione alle AI';$('loadingBar').style.width='0%';
+const body={brand_name:state.brandName,sector:state.sector,user_answers:{}};for(const[k,v]of Object.entries(state.userAnswers))body.user_answers[String(k)]=String(v);
+try{const resp=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const reader=resp.body.getReader();const dec=new TextDecoder();let buf='';
+while(true){const{done,value}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const lines=buf.split('\n');buf=lines.pop();let et='',ed='';
+for(const l of lines){if(l.startsWith('event: '))et=l.slice(7).trim();else if(l.startsWith('data: ')){ed=l.slice(6);if(et&&ed){try{const d=JSON.parse(ed);if(et==='progress')hProg(d);else if(et==='complete')hComp(d)}catch(e){}}et='';ed=''}}}}catch(e){$('loadingOverlay').classList.remove('visible');alert('Errore. Riprova.')}}
+function hProg(d){const pct=Math.min(100,Math.round((d.step/d.total)*100));$('loadingBar').style.width=pct+'%';const msgs=PM[d.phase]||['Elaborazione...'];const qn=d.qn||1;$('loadingPhase').textContent=msgs[(qn-1)%msgs.length];$('loadingSub').textContent=d.msg||''}
+function hComp(d){state.results=d;$('loadingOverlay').classList.remove('visible');showGate()}
+function cfs(s){return s>=80?'#4CAF50':s>=60?'#FF9800':'#F44336'}
+function animC(el,target,dur=1500){const st=performance.now();function tick(now){const t=Math.min(1,(now-st)/dur);const ease=1-Math.pow(1-t,3);el.textContent=Math.round(target*ease);if(t<1)requestAnimationFrame(tick)}requestAnimationFrame(tick)}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function renderResults(){const r=state.results,s=r.summary,sc=s.integrity_score,gs=s.ai_scores.gemini||0,os=s.ai_scores.openai||0;
+const hc=cfs(sc);$('scoreHero').style.background=`linear-gradient(135deg,${hc},${hc}dd)`;animC($('scoreValue'),sc);$('scoreJudgment').textContent=sc>=80?'ECCELLENTE':sc>=60?'BUONO':'SCARSO';
+let msg,mb;if(sc>=80){msg='Ottimo! Le AI rappresentano il tuo brand in modo chiaro e affidabile! 😎';mb='rgba(76,175,80,.12)'}else if(sc>=60){msg='Buono, ma puoi fare di meglio! Alcune imprecisioni sono migliorabili.';mb='rgba(255,152,0,.12)'}else{msg='Le AI non rappresentano correttamente il tuo brand. Parliamone! 😭';mb='rgba(244,67,54,.12)'}
+const me=$('scoreMessage');me.style.background=mb;me.style.border=`1px solid ${hc}40`;me.style.color=hc;me.textContent=msg;
+const gc=cfs(gs),oc=cfs(os);$('geminiCard').style.background=`linear-gradient(135deg,${gc},${gc}cc)`;$('chatgptCard').style.background=`linear-gradient(135deg,${oc},${oc}cc)`;setTimeout(()=>animC($('geminiScore'),gs),300);setTimeout(()=>animC($('chatgptScore'),os),500);
+$('qualText').textContent=r.qualitative_comment||'';
+const dc=$('detailsContainer');dc.innerHTML='';Object.keys(r.eval_results).sort((a,b)=>parseInt(a)-parseInt(b)).forEach(idx=>{const res=r.eval_results[idx];const qi=parseInt(idx);if(qi>=state.questions.length)return;const q=state.questions[qi];const qt=q.label.replace('{BRAND_NAME}',state.brandName);const avg=res.average_score||0;const ok=res.is_correct||false;
+const card=document.createElement('div');card.className='detail-card';const bc=ok?'var(--green)':'var(--red)';const bt=ok?'✅ Corretta':'❌ Da migliorare';
+let bh=`<div class="answer-block ground-truth"><strong>✅ La tua risposta:</strong><br>${esc(String(state.userAnswers[qi]||''))}</div>`;
+const aa=r.ai_answers[String(idx)]||{};for(const[an,al]of[['gemini','Gemini'],['openai','ChatGPT']]){if(aa[an]){const ar=res[an]||{};const asc=ar.score||0;const scl=asc>=.75?'var(--green)':asc>=.5?'var(--yellow)':'var(--red)';const reasonHtml=ar.reason?`<div style="margin-top:12px;padding:10px 14px;background:rgba(255,255,255,.05);border-radius:8px;border-top:1px solid rgba(255,255,255,.08)"><span style="display:block;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:${scl};margin-bottom:6px">💬 Motivazione del punteggio</span><span style="font-size:.88rem;color:var(--text);line-height:1.65">${esc(ar.reason)}</span></div>`:'';bh+=`<div class="answer-block" style="border-left-color:${scl}"><strong>${an==='gemini'?'⚫':'🟢'} ${al}</strong> <span style="color:${scl};font-weight:700">(${asc.toFixed(2)})</span><br>${esc(aa[an])}${reasonHtml}</div>`}}
+card.innerHTML=`<div class="detail-header" onclick="this.parentElement.classList.toggle('open')"><span class="q-text">D${qi+1}: ${esc(qt.substring(0,55))}...</span><span class="status-badge" style="background:${bc}20;color:${bc}">${bt}</span><span class="chevron">▼</span></div><div class="detail-body"><div class="detail-content">${bh}</div></div>`;dc.appendChild(card)});
+const rs=$('recoSection');rs.innerHTML='';if(r.recommendation&&Object.keys(r.recommendation).length){let h=`<div style="margin:32px 0 20px"><h3 style="color:var(--text2);margin-bottom:10px">🏆 Chi consigliano le AI nel settore "${esc(state.sector)}"?</h3><p style="color:var(--text3);font-size:.9rem;line-height:1.7">Abbiamo chiesto a <strong style="color:var(--text)">Gemini</strong> e <strong style="color:var(--text)">ChatGPT</strong> di consigliare liberamente un brand nel settore <strong style="color:var(--text)">${esc(state.sector)}</strong>, senza alcun riferimento a ${esc(state.brandName)}. Questo test rivela se il tuo brand è spontaneamente riconosciuto dalle AI come punto di riferimento del settore — un indicatore chiave di visibilità organica nelle ricerche AI.</p></div>`;for(const[an,al]of[['gemini','Gemini'],['openai','ChatGPT']]){if(r.recommendation[an]){const m=r.recommendation[an].toLowerCase().includes(state.brandName.toLowerCase());h+=`<div class="reco-card"><strong>${an==='gemini'?'⚫':'🟢'} ${al}</strong> <span class="badge ${m?'badge-yes':'badge-no'}" style="margin-left:8px">${m?'✅ Ti ha menzionato!':'⚠️ Non ti ha menzionato'}</span><p style="color:var(--text2);margin-top:12px;line-height:1.7">${esc(r.recommendation[an])}</p></div>`}}rs.innerHTML=h}}
+function gp(){return{brand_name:state.brandName,sector:state.sector,summary:state.results.summary,eval_results:state.results.eval_results,user_answers:Object.fromEntries(Object.entries(state.userAnswers).map(([k,v])=>[String(k),String(v)])),ai_answers:state.results.ai_answers,recommendation:state.results.recommendation||{},qualitative_comment:state.results.qualitative_comment||''}}
+$('btnGate').addEventListener('click',async()=>{const em=$('gateEmail').value.trim();if(!em||!em.includes('@')){$('gateStatus').innerHTML='<span style="color:var(--yellow)">Inserisci un indirizzo email valido</span>';return}if(!$('gatePrivacy').checked){$('gateStatus').innerHTML='<span style="color:var(--yellow)">Accetta il consenso per procedere</span>';return}state.email=em;$('btnGate').disabled=true;$('gateStatus').innerHTML='<span style="color:var(--text2)">Invio report in corso...</span>';fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:em,...gp()})}).catch(()=>{});renderResults();showStep(3)});
+$('btnDownloadPdf').addEventListener('click',async()=>{$('btnDownloadPdf').disabled=true;$('pdfStatus').textContent='Generazione PDF in corso...';try{const r=await fetch('/api/download-pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:state.email,...gp()})});const b=await r.blob();const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`Brand_AI_Integrity_${state.brandName}.pdf`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u);$('pdfStatus').textContent=''}catch(e){$('pdfStatus').textContent='Errore nella generazione del PDF'}$('btnDownloadPdf').disabled=false});
+showStep(1);
+</script>
+</body>
+</html>
