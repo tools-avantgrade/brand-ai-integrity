@@ -6,7 +6,6 @@ SSE streaming for real-time progress, PDF generation, SMTP2GO email.
 import os
 import json
 import time
-import smtplib
 from io import BytesIO
 from datetime import datetime
 from typing import Optional, Dict, Tuple
@@ -30,9 +29,8 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
+import base64
+import urllib.request
 
 load_dotenv()
 
@@ -461,13 +459,10 @@ def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, 
 # EMAIL
 # ============================================================
 def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment=""):
-    h = env("SMTP2GO_HOST", "mail.smtp2go.com")
-    p = int(env("SMTP2GO_PORT", "587"))
-    u = env("SMTP2GO_USERNAME")
-    pw = env("SMTP2GO_PASSWORD")
-    s = env("SMTP2GO_SENDER", "noreply@avantgrade.com")
-    if not u or not pw:
-        return False, "SMTP2GO non configurato"
+    api_key = env("SMTP2GO_API_KEY")
+    sender = env("SMTP2GO_SENDER", "noreply@avantgrade.com")
+    if not api_key:
+        return False, "SMTP2GO_API_KEY non configurata"
 
     score = summary.get("integrity_score", 0) if summary else 0
     gs = summary.get("ai_scores", {}).get("gemini", 0) if summary else 0
@@ -498,75 +493,77 @@ def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment="")
             f'<p style="font-size:14px;color:#444;margin:0;line-height:1.6;">{short}</p></div>'
         )
 
+    html_body = (
+        f'<html><body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:0 auto;background:#f4f4f4;">'
+        f'<div style="background:linear-gradient(135deg,#E87722,#FF9800);padding:36px 30px;text-align:center;border-radius:10px 10px 0 0;">'
+        f'<h1 style="color:white;margin:0;font-size:24px;">Brand AI Integrity Report</h1>'
+        f'<p style="color:rgba(255,255,255,.9);margin:10px 0 0;font-size:16px;">{bn} &mdash; {sector}</p></div>'
+        f'<div style="padding:30px;background:#f9f9f9;">'
+        f'<p style="font-size:15px;line-height:1.7;color:#444;">'
+        f'Abbiamo analizzato come <b>Gemini</b> e <b>ChatGPT</b> rappresentano <b>{bn}</b> '
+        f'nel settore <b>{sector}</b>, confrontando le risposte delle AI con le informazioni reali '
+        f'su <b>{total} domande chiave</b>: prodotti, target, sedi, canali social e sito web.</p>'
+        f'<div style="background:{score_color};border-radius:12px;padding:24px;text-align:center;margin:24px 0;">'
+        f'<p style="color:rgba(255,255,255,.85);margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:1px;">Brand AI Integrity Score</p>'
+        f'<p style="color:white;margin:0;font-size:48px;font-weight:bold;">{score}<span style="font-size:20px;opacity:.7">/100</span></p>'
+        f'<p style="color:white;margin:6px 0 0;font-size:15px;font-weight:bold;">{score_label}</p></div>'
+        f'<p style="font-size:14px;line-height:1.7;color:#444;">{score_msg}</p>'
+        f'<table style="width:100%;border-collapse:collapse;margin:20px 0;">'
+        f'<tr>'
+        f'<td style="background:#fff;border:1px solid #eee;border-radius:8px;padding:16px;text-align:center;width:50%;">'
+        f'<p style="margin:0 0 4px;font-size:12px;color:#888;">GEMINI</p>'
+        f'<p style="margin:0;font-size:28px;font-weight:bold;color:{_cscore(gs)};">{gs}/100</p></td>'
+        f'<td style="width:12px;"></td>'
+        f'<td style="background:#fff;border:1px solid #eee;border-radius:8px;padding:16px;text-align:center;width:50%;">'
+        f'<p style="margin:0 0 4px;font-size:12px;color:#888;">CHATGPT</p>'
+        f'<p style="margin:0;font-size:28px;font-weight:bold;color:{_cscore(cs)};">{cs}/100</p></td>'
+        f'</tr></table>'
+        f'<p style="font-size:14px;color:#666;line-height:1.6;">'
+        f'Su {total} domande analizzate: <b style="color:#4CAF50;">{correct} corrette</b>'
+        f'{f", <b style=&quot;color:#FF9800;&quot;>{partial} parziali</b>" if partial else ""}'
+        f'{f", <b style=&quot;color:#F44336;&quot;>{incorrect} da migliorare</b>" if incorrect else ""}.</p>'
+        f'{comment_html}'
+        f'<p style="font-size:14px;color:#666;line-height:1.6;margin-top:20px;">'
+        f'In allegato trovi il <b>report PDF completo</b> con il dettaglio di ogni domanda, '
+        f'le risposte di ciascuna AI e i suggerimenti per migliorare il tuo score.</p>'
+        f'<hr style="border:1px solid #eee;margin:24px 0;">'
+        f'<p style="text-align:center;margin:24px 0 8px;">'
+        f'<a href="https://www.avantgrade.com/schedule-a-call" '
+        f'style="background:#E87722;color:white;padding:14px 36px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;display:inline-block;">'
+        f'Vuoi migliorare il tuo Score? Parliamone</a></p>'
+        f'<p style="text-align:center;font-size:12px;color:#999;margin-top:20px;">'
+        f'Report generato da Brand AI Integrity &mdash; Team Innovation di AvantGrade.com</p>'
+        f'</div></body></html>'
+    )
+
     try:
-        msg = MIMEMultipart()
-        msg["From"] = s
-        msg["To"] = to
-        msg["Subject"] = f"Brand AI Integrity Report - {bn}"
-        html = (
-            f'<html><body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:0 auto;background:#f4f4f4;">'
-            f'<div style="background:linear-gradient(135deg,#E87722,#FF9800);padding:36px 30px;text-align:center;border-radius:10px 10px 0 0;">'
-            f'<h1 style="color:white;margin:0;font-size:24px;">Brand AI Integrity Report</h1>'
-            f'<p style="color:rgba(255,255,255,.9);margin:10px 0 0;font-size:16px;">{bn} &mdash; {sector}</p></div>'
-
-            f'<div style="padding:30px;background:#f9f9f9;">'
-
-            f'<p style="font-size:15px;line-height:1.7;color:#444;">'
-            f'Abbiamo analizzato come <b>Gemini</b> e <b>ChatGPT</b> rappresentano <b>{bn}</b> '
-            f'nel settore <b>{sector}</b>, confrontando le risposte delle AI con le informazioni reali '
-            f'su <b>{total} domande chiave</b>: prodotti, target, sedi, canali social e sito web.</p>'
-
-            f'<div style="background:{score_color};border-radius:12px;padding:24px;text-align:center;margin:24px 0;">'
-            f'<p style="color:rgba(255,255,255,.85);margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:1px;">Brand AI Integrity Score</p>'
-            f'<p style="color:white;margin:0;font-size:48px;font-weight:bold;">{score}<span style="font-size:20px;opacity:.7">/100</span></p>'
-            f'<p style="color:white;margin:6px 0 0;font-size:15px;font-weight:bold;">{score_label}</p></div>'
-
-            f'<p style="font-size:14px;line-height:1.7;color:#444;">{score_msg}</p>'
-
-            f'<table style="width:100%;border-collapse:collapse;margin:20px 0;">'
-            f'<tr>'
-            f'<td style="background:#fff;border:1px solid #eee;border-radius:8px;padding:16px;text-align:center;width:50%;">'
-            f'<p style="margin:0 0 4px;font-size:12px;color:#888;">GEMINI</p>'
-            f'<p style="margin:0;font-size:28px;font-weight:bold;color:{_cscore(gs)};">{gs}/100</p></td>'
-            f'<td style="width:12px;"></td>'
-            f'<td style="background:#fff;border:1px solid #eee;border-radius:8px;padding:16px;text-align:center;width:50%;">'
-            f'<p style="margin:0 0 4px;font-size:12px;color:#888;">CHATGPT</p>'
-            f'<p style="margin:0;font-size:28px;font-weight:bold;color:{_cscore(cs)};">{cs}/100</p></td>'
-            f'</tr></table>'
-
-            f'<p style="font-size:14px;color:#666;line-height:1.6;">'
-            f'Su {total} domande analizzate: <b style="color:#4CAF50;">{correct} corrette</b>'
-            f'{f", <b style=&quot;color:#FF9800;&quot;>{partial} parziali</b>" if partial else ""}'
-            f'{f", <b style=&quot;color:#F44336;&quot;>{incorrect} da migliorare</b>" if incorrect else ""}.</p>'
-
-            f'{comment_html}'
-
-            f'<p style="font-size:14px;color:#666;line-height:1.6;margin-top:20px;">'
-            f'In allegato trovi il <b>report PDF completo</b> con il dettaglio di ogni domanda, '
-            f'le risposte di ciascuna AI e i suggerimenti per migliorare il tuo score.</p>'
-
-            f'<hr style="border:1px solid #eee;margin:24px 0;">'
-
-            f'<p style="text-align:center;margin:24px 0 8px;">'
-            f'<a href="https://www.avantgrade.com/schedule-a-call" '
-            f'style="background:#E87722;color:white;padding:14px 36px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;display:inline-block;">'
-            f'Vuoi migliorare il tuo Score? Parliamone</a></p>'
-
-            f'<p style="text-align:center;font-size:12px;color:#999;margin-top:20px;">'
-            f'Report generato da Brand AI Integrity &mdash; Team Innovation di AvantGrade.com</p>'
-
-            f'</div></body></html>'
-        )
-        msg.attach(MIMEText(html, "html"))
         pdf_buf.seek(0)
-        att = MIMEApplication(pdf_buf.read(), _subtype="pdf")
-        att.add_header("Content-Disposition", "attachment", filename=f"Brand_AI_Integrity_{bn}.pdf")
-        msg.attach(att)
-        with smtplib.SMTP(h, p) as srv:
-            srv.starttls()
-            srv.login(u, pw)
-            srv.sendmail(s, to, msg.as_string())
-        return True, "OK"
+        pdf_b64 = base64.b64encode(pdf_buf.read()).decode("utf-8")
+
+        payload = json.dumps({
+            "api_key": api_key,
+            "to": [to],
+            "sender": sender,
+            "subject": f"Brand AI Integrity Report - {bn}",
+            "html_body": html_body,
+            "attachments": [{
+                "filename": f"Brand_AI_Integrity_{bn}.pdf",
+                "fileblob": pdf_b64,
+                "mimetype": "application/pdf",
+            }],
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "https://api.smtp2go.com/v3/email/send",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            if result.get("data", {}).get("succeeded", 0) > 0:
+                return True, "OK"
+            return False, json.dumps(result)
     except Exception as e:
         return False, str(e)
 
@@ -752,11 +749,8 @@ class EmailReq(BaseModel):
 @app.get("/api/debug-email")
 async def debug_email():
     return {
-        "SMTP2GO_HOST": env("SMTP2GO_HOST", "(default: mail.smtp2go.com)"),
-        "SMTP2GO_PORT": env("SMTP2GO_PORT", "(default: 587)"),
+        "SMTP2GO_API_KEY": "SET" if env("SMTP2GO_API_KEY") else "MISSING",
         "SMTP2GO_SENDER": env("SMTP2GO_SENDER", "(default: noreply@avantgrade.com)"),
-        "SMTP2GO_USERNAME": "SET" if env("SMTP2GO_USERNAME") else "MISSING",
-        "SMTP2GO_PASSWORD": "SET" if env("SMTP2GO_PASSWORD") else "MISSING",
     }
 
 
