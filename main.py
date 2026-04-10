@@ -168,18 +168,23 @@ def eval_batch(question, ai_answers, user_answer, retry=False):
         block += f"\nRisposta {label}:\n{ai_answers[n]}\n"
 
     examples = ", ".join(
-        f'"{n}": {{"score": 0.85, "is_correct": true, "reason": "Breve spiegazione", "key_conflicts": []}}'
+        f'"{n}": {{"score": 0.72, "is_correct": false, "reason": "Breve spiegazione del confronto con la ground truth", "key_conflicts": []}}'
         for n in names
     )
 
     p = (
-        f"Valuta la coerenza tra le risposte AI e la ground truth.\n\n"
+        f"Sei un valutatore rigoroso. Devi confrontare le risposte AI ESCLUSIVAMENTE con la ground truth fornita dall'utente.\n\n"
+        f"REGOLE FONDAMENTALI:\n"
+        f"- La ground truth e' l'UNICO riferimento valido. NON valutare se la risposta AI e' genericamente corretta o plausibile.\n"
+        f"- Se la ground truth e' incomprensibile, vuota, o non contiene informazioni reali (es. testo casuale, caratteri senza senso), "
+        f"lo score DEVE essere 0.0 e is_correct DEVE essere false, perche' nessuna risposta AI puo' corrispondere a una ground truth priva di significato.\n"
+        f"- Il confronto e' SEMANTICO ma STRETTO: la risposta AI deve dire sostanzialmente le stesse cose della ground truth.\n\n"
         f"Domanda: {question}\n{block}\n"
-        f"Ground truth: {user_answer}\n\n"
-        f"Criteri:\n"
-        f"- corretta (score>=0.75) se allineata semanticamente\n"
-        f"- parziale (0.5-0.74) se info corrette ma troppi dettagli extra\n"
-        f"- sbagliata (<0.5) se contraddice o manca essenziali\n\n"
+        f"Ground truth dell'utente: {user_answer}\n\n"
+        f"Criteri di scoring:\n"
+        f"- score >= 0.75 (corretta): la risposta AI riporta le STESSE informazioni della ground truth\n"
+        f"- score 0.50-0.74 (parziale): la risposta AI contiene parte delle info della ground truth ma ne manca alcune o aggiunge troppi dettagli non presenti\n"
+        f"- score < 0.50 (sbagliata): la risposta AI contraddice la ground truth, manca di informazioni essenziali, oppure la ground truth non e' una risposta valida\n\n"
     )
     if retry:
         p += "GENERA SOLO JSON VALIDO.\n\n"
