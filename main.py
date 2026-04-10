@@ -746,44 +746,6 @@ class EmailReq(BaseModel):
     qualitative_comment: str
 
 
-@app.get("/api/debug-email")
-async def debug_email():
-    return {
-        "SMTP2GO_API_KEY": "SET" if env("SMTP2GO_API_KEY") else "MISSING",
-        "SMTP2GO_SENDER": env("SMTP2GO_SENDER", "(default: noreply@avantgrade.com)"),
-    }
-
-
-@app.get("/api/test-email")
-async def test_email(to: str = ""):
-    if not to or "@" not in to:
-        return {"error": "Passa ?to=tua@email.com"}
-    api_key = env("SMTP2GO_API_KEY")
-    sender = env("SMTP2GO_SENDER", "noreply@avantgrade.com")
-    try:
-        payload = json.dumps({
-            "api_key": api_key,
-            "to": [to],
-            "sender": sender,
-            "subject": "Test Brand AI Integrity",
-            "html_body": "<h1>Test OK</h1><p>Se leggi questa email, funziona!</p>",
-        }).encode("utf-8")
-        req = urllib.request.Request(
-            "https://api.smtp2go.com/v3/email/send",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-            return {"smtp2go_response": result}
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8")
-        return {"error": str(e), "smtp2go_response": body}
-    except Exception as e:
-        return {"error": str(e)}
-
-
 @app.post("/api/send-email")
 async def email_route(b: EmailReq):
     pdf = make_pdf(
