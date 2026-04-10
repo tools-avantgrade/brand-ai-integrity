@@ -16,7 +16,6 @@ import asyncio
 from google import genai as google_genai
 from google.genai import types as genai_types
 from openai import OpenAI
-import requests
 from dotenv import load_dotenv
 
 from fastapi import FastAPI, Request
@@ -65,65 +64,12 @@ def env(key, default=""):
 
 
 # ============================================================
-# BRAVE SEARCH
-# ============================================================
-_cache = {}
-
-
-def brave_search(query, max_results=10):
-    if query in _cache:
-        return _cache[query]
-    try:
-        key = env("BRAVE_API_KEY")
-        if not key:
-            return "", False
-        r = requests.get(
-            "https://api.search.brave.com/res/v1/web/search",
-            headers={
-                "Accept": "application/json",
-                "Accept-Encoding": "gzip",
-                "X-Subscription-Token": key,
-            },
-            params={
-                "q": query,
-                "count": max_results,
-                "search_lang": "it",
-                "text_decorations": False,
-                "safesearch": "moderate",
-            },
-            timeout=12,
-        )
-        r.raise_for_status()
-        results = r.json().get("web", {}).get("results", [])
-        if not results:
-            _cache[query] = ("", False)
-            return "", False
-        fmt = ""
-        for i, x in enumerate(results[:max_results], 1):
-            fmt += f"{i}. {x.get('title', '')}\n{x.get('description', '')}\nFonte: {x.get('url', '')}\n\n"
-        out = (fmt.strip(), True)
-        _cache[query] = out
-        return out
-    except Exception:
-        return "", False
-
-
-# ============================================================
 # AI GENERATION
 # ============================================================
-def _build_prompt(bn, q, sr, ok):
-    if ok and sr:
-        return (
-            f"Rispondi alla seguente domanda su {bn}.\n\n"
-            f"Ho effettuato una ricerca web:\n{sr}\n\n"
-            f"Domanda: {q}\n\n"
-            f"ISTRUZIONI:\n"
-            f"- Usa PRINCIPALMENTE le informazioni web\n"
-            f"- Rispondi in italiano, chiaro e diretto (max 200 parole)\n"
-            f"- Non menzionare la ricerca web"
-        )
+def _build_prompt(bn, q):
     return (
-        f"Rispondi alla seguente domanda su {bn}.\n\n"
+        f"Rispondi alla seguente domanda su {bn}.\n"
+        f"Cerca informazioni aggiornate sul web per fornire una risposta accurata.\n\n"
         f"Domanda: {q}\n\n"
         f"Rispondi in italiano, chiaro e diretto (max 200 parole)."
     )
@@ -141,12 +87,13 @@ def _safety():
 def gen_gemini(bn, q):
     try:
         client = google_genai.Client(api_key=env("GEMINI_API_KEY"))
-        sr, ok = brave_search(f"{bn} {q}")
+        google_search_tool = genai_types.Tool(google_search=genai_types.GoogleSearch())
         r = client.models.generate_content(
             model=env("GEMINI_MODEL", "gemini-2.0-flash"),
-            contents=_build_prompt(bn, q, sr, ok),
+            contents=_build_prompt(bn, q),
             config=genai_types.GenerateContentConfig(
                 temperature=0.2, top_p=0.8, top_k=40, max_output_tokens=2048,
+                tools=[google_search_tool],
                 safety_settings=_safety(),
             ),
         )
@@ -162,33 +109,31 @@ def gen_gemini(bn, q):
 def gen_openai(bn, q):
     try:
         c = OpenAI(api_key=env("OPENAI_API_KEY"))
-        sr, ok = brave_search(f"{bn} {q}")
-        r = c.chat.completions.create(
+        r = c.responses.create(
             model=env("OPENAI_MODEL", "gpt-4o-mini"),
-            messages=[
-                {"role": "system", "content": "Rispondi in modo naturale e diretto in italiano."},
-                {"role": "user", "content": _build_prompt(bn, q, sr, ok)},
-            ],
-            temperature=0.3,
-            max_tokens=1024,
+            instructions="Rispondi in modo naturale e diretto in italiano.",
+            input=_build_prompt(bn, q),
+            tools=[{"type": "web_search_preview"}],
         )
-        if r and r.choices and r.choices[0].message.content:
-            return r.choices[0].message.content.strip(), None
+        if r and r.output_text:
+            return r.output_text.strip(), None
         return None, "Empty"
     except Exception as e:
         return None, str(e)
 
 
 def gen_reco(sector, ai):
-    p = f'Nel settore "{sector}" in Italia, quale brand consiglieresti e perche?\nRispondi in italiano (max 150 parole).'
+    p = f'Nel settore "{sector}" in Italia, quale brand consiglieresti e perche?\nCerca informazioni aggiornate sul web.\nRispondi in italiano (max 150 parole).'
     try:
         if ai == "gemini":
             client = google_genai.Client(api_key=env("GEMINI_API_KEY"))
+            google_search_tool = genai_types.Tool(google_search=genai_types.GoogleSearch())
             r = client.models.generate_content(
                 model=env("GEMINI_MODEL", "gemini-2.0-flash"),
                 contents=p,
                 config=genai_types.GenerateContentConfig(
                     temperature=0.3, max_output_tokens=1024,
+                    tools=[google_search_tool],
                     safety_settings=_safety(),
                 ),
             )
@@ -197,14 +142,13 @@ def gen_reco(sector, ai):
             return None, "Empty"
         else:
             c = OpenAI(api_key=env("OPENAI_API_KEY"))
-            r = c.chat.completions.create(
+            r = c.responses.create(
                 model=env("OPENAI_MODEL", "gpt-4o-mini"),
-                messages=[{"role": "user", "content": p}],
-                temperature=0.3,
-                max_tokens=1024,
+                input=p,
+                tools=[{"type": "web_search_preview"}],
             )
-            if r and r.choices:
-                return r.choices[0].message.content.strip(), None
+            if r and r.output_text:
+                return r.output_text.strip(), None
             return None, "Empty"
     except Exception as e:
         return None, str(e)
@@ -502,7 +446,7 @@ def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, 
 # ============================================================
 # EMAIL
 # ============================================================
-def send_email(to, bn, pdf_buf):
+def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment=""):
     h = env("SMTP2GO_HOST", "mail.smtp2go.com")
     p = int(env("SMTP2GO_PORT", "587"))
     u = env("SMTP2GO_USERNAME")
@@ -510,22 +454,92 @@ def send_email(to, bn, pdf_buf):
     s = env("SMTP2GO_SENDER", "noreply@avantgrade.com")
     if not u or not pw:
         return False, "SMTP2GO non configurato"
+
+    score = summary.get("integrity_score", 0) if summary else 0
+    gs = summary.get("ai_scores", {}).get("gemini", 0) if summary else 0
+    cs = summary.get("ai_scores", {}).get("openai", 0) if summary else 0
+    correct = summary.get("correct", 0) if summary else 0
+    total = summary.get("total", 0) if summary else 0
+    incorrect = summary.get("incorrect", 0) if summary else 0
+
+    if score >= 80:
+        score_color, score_label = "#4CAF50", "ECCELLENTE"
+        score_msg = f"Ottima notizia: le AI rappresentano <b>{bn}</b> in modo chiaro e affidabile."
+    elif score >= 60:
+        score_color, score_label = "#FF9800", "BUONO"
+        score_msg = f"Le AI conoscono <b>{bn}</b>, ma ci sono margini di miglioramento su alcune informazioni chiave."
+    else:
+        score_color, score_label = "#F44336", "DA MIGLIORARE"
+        score_msg = f"Le AI non rappresentano correttamente <b>{bn}</b>: &egrave; il momento di intervenire."
+
+    comment_html = ""
+    if qualitative_comment:
+        short = qualitative_comment[:300]
+        if len(qualitative_comment) > 300:
+            short += "..."
+        comment_html = (
+            f'<div style="background:#fff;border-left:4px solid #E87722;padding:16px 20px;margin:20px 0;border-radius:0 8px 8px 0;">'
+            f'<p style="font-size:13px;color:#666;margin:0 0 6px;font-weight:bold;">ANALISI QUALITATIVA</p>'
+            f'<p style="font-size:14px;color:#444;margin:0;line-height:1.6;">{short}</p></div>'
+        )
+
     try:
         msg = MIMEMultipart()
         msg["From"] = s
         msg["To"] = to
         msg["Subject"] = f"Brand AI Integrity Report - {bn}"
         html = (
-            f'<html><body style="font-family:Arial;color:#333;max-width:600px;margin:0 auto;">'
-            f'<div style="background:linear-gradient(135deg,#E87722,#FF9800);padding:30px;text-align:center;border-radius:10px 10px 0 0;">'
-            f'<h1 style="color:white;margin:0;">Brand AI Integrity Report</h1>'
-            f'<p style="color:rgba(255,255,255,.9);margin:10px 0 0;">Brand: {bn}</p></div>'
+            f'<html><body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:0 auto;background:#f4f4f4;">'
+            f'<div style="background:linear-gradient(135deg,#E87722,#FF9800);padding:36px 30px;text-align:center;border-radius:10px 10px 0 0;">'
+            f'<h1 style="color:white;margin:0;font-size:24px;">Brand AI Integrity Report</h1>'
+            f'<p style="color:rgba(255,255,255,.9);margin:10px 0 0;font-size:16px;">{bn} &mdash; {sector}</p></div>'
+
             f'<div style="padding:30px;background:#f9f9f9;">'
-            f'<p>In allegato il report completo del <b>Brand AI Integrity Score</b> per <b>{bn}</b>.</p>'
-            f'<hr style="border:1px solid #eee;margin:20px 0;">'
-            f'<p style="text-align:center;"><a href="https://www.avantgrade.com/schedule-a-call" '
-            f'style="background:#E87722;color:white;padding:12px 30px;text-decoration:none;border-radius:8px;font-weight:bold;">'
-            f'Parliamone</a></p></div></body></html>'
+
+            f'<p style="font-size:15px;line-height:1.7;color:#444;">'
+            f'Abbiamo analizzato come <b>Gemini</b> e <b>ChatGPT</b> rappresentano <b>{bn}</b> '
+            f'nel settore <b>{sector}</b>, confrontando le risposte delle AI con le informazioni reali '
+            f'su <b>{total} domande chiave</b>: prodotti, target, sedi, canali social e sito web.</p>'
+
+            f'<div style="background:{score_color};border-radius:12px;padding:24px;text-align:center;margin:24px 0;">'
+            f'<p style="color:rgba(255,255,255,.85);margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:1px;">Brand AI Integrity Score</p>'
+            f'<p style="color:white;margin:0;font-size:48px;font-weight:bold;">{score}<span style="font-size:20px;opacity:.7">/100</span></p>'
+            f'<p style="color:white;margin:6px 0 0;font-size:15px;font-weight:bold;">{score_label}</p></div>'
+
+            f'<p style="font-size:14px;line-height:1.7;color:#444;">{score_msg}</p>'
+
+            f'<table style="width:100%;border-collapse:collapse;margin:20px 0;">'
+            f'<tr>'
+            f'<td style="background:#fff;border:1px solid #eee;border-radius:8px;padding:16px;text-align:center;width:50%;">'
+            f'<p style="margin:0 0 4px;font-size:12px;color:#888;">GEMINI</p>'
+            f'<p style="margin:0;font-size:28px;font-weight:bold;color:{_cscore(gs)};">{gs}/100</p></td>'
+            f'<td style="width:12px;"></td>'
+            f'<td style="background:#fff;border:1px solid #eee;border-radius:8px;padding:16px;text-align:center;width:50%;">'
+            f'<p style="margin:0 0 4px;font-size:12px;color:#888;">CHATGPT</p>'
+            f'<p style="margin:0;font-size:28px;font-weight:bold;color:{_cscore(cs)};">{cs}/100</p></td>'
+            f'</tr></table>'
+
+            f'<p style="font-size:14px;color:#666;line-height:1.6;">'
+            f'Su {total} domande analizzate: <b style="color:#4CAF50;">{correct} corrette</b>'
+            f'{f", <b style=&quot;color:#F44336;&quot;>{incorrect} da migliorare</b>" if incorrect else ""}.</p>'
+
+            f'{comment_html}'
+
+            f'<p style="font-size:14px;color:#666;line-height:1.6;margin-top:20px;">'
+            f'In allegato trovi il <b>report PDF completo</b> con il dettaglio di ogni domanda, '
+            f'le risposte di ciascuna AI e i suggerimenti per migliorare il tuo score.</p>'
+
+            f'<hr style="border:1px solid #eee;margin:24px 0;">'
+
+            f'<p style="text-align:center;margin:24px 0 8px;">'
+            f'<a href="https://www.avantgrade.com/schedule-a-call" '
+            f'style="background:#E87722;color:white;padding:14px 36px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;display:inline-block;">'
+            f'Vuoi migliorare il tuo Score? Parliamone</a></p>'
+
+            f'<p style="text-align:center;font-size:12px;color:#999;margin-top:20px;">'
+            f'Report generato da Brand AI Integrity &mdash; Team Innovation di AvantGrade.com</p>'
+
+            f'</div></body></html>'
         )
         msg.attach(MIMEText(html, "html"))
         pdf_buf.seek(0)
@@ -584,7 +598,7 @@ async def analyze(body: AnalyzeReq):
             yield sse("progress", {
                 "step": step, "total": total, "phase": "gemini",
                 "qn": idx + 1, "qt": len(QUESTIONS),
-                "msg": f"Gemini analizza domanda {idx + 1}...",
+                "msg": f"Domanda {idx + 1} di {len(QUESTIONS)}",
             })
             a, e = await asyncio.to_thread(gen_gemini, bn, ap)
             if e:
@@ -596,7 +610,7 @@ async def analyze(body: AnalyzeReq):
             yield sse("progress", {
                 "step": step, "total": total, "phase": "chatgpt",
                 "qn": idx + 1, "qt": len(QUESTIONS),
-                "msg": f"ChatGPT cerca info domanda {idx + 1}...",
+                "msg": f"Domanda {idx + 1} di {len(QUESTIONS)}",
             })
             a, e = await asyncio.to_thread(gen_openai, bn, ap)
             if e:
@@ -611,7 +625,7 @@ async def analyze(body: AnalyzeReq):
             yield sse("progress", {
                 "step": step, "total": total, "phase": "eval",
                 "qn": idx + 1, "qt": len(QUESTIONS),
-                "msg": f"Valutazione domanda {idx + 1}...",
+                "msg": f"Valutazione domanda {idx + 1} di {len(QUESTIONS)}",
             })
             q = QUESTIONS[idx]
             qt = q["ai_prompt"].replace("{BRAND_NAME}", bn)
@@ -701,7 +715,7 @@ async def email_route(b: EmailReq):
         b.brand_name, b.sector, b.summary, b.eval_results,
         b.user_answers, b.ai_answers, b.recommendation, b.qualitative_comment,
     )
-    ok, msg = send_email(b.email, b.brand_name, pdf)
+    ok, msg = send_email(b.email, b.brand_name, pdf, b.sector, b.summary, b.qualitative_comment)
     return {"success": ok, "message": msg}
 
 

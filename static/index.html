@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Brand AI Integrity</title>
+<link rel="icon" href="/static/favicon32x32.png" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 <style>
@@ -16,8 +17,8 @@ h1,h2,h3,h4{font-family:'Outfit',sans-serif;font-weight:700;letter-spacing:-.02e
 .container{max-width:720px;margin:0 auto;padding:24px 20px;position:relative;z-index:1}
 @media(min-width:768px){.container{padding:40px 32px}}
 .header{text-align:center;padding:48px 0 32px;animation:fadeIn .8s ease}
-.header .logo{font-family:'Outfit';font-size:clamp(1.6rem,4vw,2.2rem);font-weight:900;background:linear-gradient(135deg,var(--orange),var(--orange-light));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.header p{color:var(--text2);font-size:1.05rem;margin-top:8px}
+.header .logo{font-family:'Outfit';font-size:clamp(1.9rem,4.5vw,2.5rem);font-weight:900;background:linear-gradient(135deg,var(--orange),var(--orange-light));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header p{color:white;font-size:clamp(1.9rem,4.5vw,2.5rem);margin-top:8px;font-family:'Outfit',sans-serif;font-weight:700}
 .card{background:var(--surface);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radius);padding:32px;margin-bottom:24px;transition:border-color .3s,box-shadow .3s}
 .card:hover{border-color:var(--border-hover);box-shadow:0 8px 40px rgba(0,0,0,.3)}
 .card h2{font-size:1.25rem;margin-bottom:16px}
@@ -30,7 +31,7 @@ h1,h2,h3,h4{font-family:'Outfit',sans-serif;font-weight:700;letter-spacing:-.02e
 .step-line.done{background:var(--green)}
 .step-label{font-size:.75rem;color:var(--text3);text-align:center;margin-top:6px}
 .form-group{margin-bottom:24px}
-.form-group label{display:block;font-family:'Outfit';font-weight:600;font-size:.9rem;color:var(--text);margin-bottom:8px}
+.form-group label{display:block;font-family:'Outfit';font-weight:600;font-size:1.15rem;color:var(--text);margin-bottom:8px}
 .form-group input[type="text"],.form-group input[type="email"],.form-group textarea{width:100%;padding:14px 18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius-sm);color:var(--text);font-family:'DM Sans';font-size:.95rem;transition:border-color .3s,box-shadow .3s;outline:none;resize:vertical}
 .form-group input:focus,.form-group textarea:focus{border-color:var(--orange);box-shadow:0 0 0 3px rgba(232,119,34,.15)}
 .form-group textarea{min-height:100px}
@@ -134,7 +135,7 @@ h1,h2,h3,h4{font-family:'Outfit',sans-serif;font-weight:700;letter-spacing:-.02e
     <div class="card anim-in" style="text-align:center;padding:48px 40px;max-width:480px;width:100%">
       <div style="font-size:3rem;margin-bottom:16px">🎯</div>
       <h2 style="font-size:1.6rem;margin-bottom:12px">Il tuo report è pronto!</h2>
-      <p style="color:var(--text2);line-height:1.7;margin-bottom:32px">Inserisci la tua email per visualizzare i risultati completi e ricevere il report in PDF.</p>
+      <p style="color:var(--text2);line-height:1.7;margin-bottom:32px">Inserisci la tua email per visualizzare i risultati e ricevere il report in PDF.</p>
       <div class="form-group" style="text-align:left">
         <label>Il tuo indirizzo email</label>
         <input type="email" id="gateEmail" placeholder="nome@azienda.com">
@@ -149,7 +150,7 @@ h1,h2,h3,h4{font-family:'Outfit',sans-serif;font-weight:700;letter-spacing:-.02e
   </div>
 </div>
 <div class="container">
-  <div class="header"><div class="logo">Brand AI Integrity</div><p>Misura quanto le AI conoscono davvero il tuo brand.</p></div>
+  <div class="header"><div class="logo">Brand AI Integrity</div><p>Quanto le AI conoscono davvero il tuo brand?</p></div>
   <div class="steps">
     <div><div class="step-dot active" id="dot1">1</div><div class="step-label">Brand</div></div>
     <div class="step-line" id="line1"></div>
@@ -159,8 +160,8 @@ h1,h2,h3,h4{font-family:'Outfit',sans-serif;font-weight:700;letter-spacing:-.02e
   </div>
   <div id="step1">
     <div class="card anim-in"><h2>Come funziona?</h2>
-      <p style="color:var(--text2);line-height:1.7">Questo strumento misura quanto le intelligenze artificiali conoscono il tuo brand. In <strong>3 semplici passi</strong>: inserisci il nome del brand, rispondi a poche domande, e scopri se <strong>Gemini</strong> e <strong>ChatGPT</strong> raccontano la verita su di te. Il risultato e il tuo <strong style="color:var(--orange)">Brand AI Integrity Score</strong>: da 0 a 100.</p></div>
-    <div class="card anim-in anim-in-1"><h2>Iniziamo</h2>
+      <p style="color:var(--text2);line-height:1.7"><strong style="color:var(--orange)">Brand AI Integrity Score</strong> misura quanto le intelligenze artificiali conoscono il tuo brand in <strong>3 semplici passi</strong>: inserisci il nome del brand, rispondi a poche domande e scopri se <strong>Gemini</strong> e <strong>ChatGPT</strong> raccontano la verità su di te. Da 0 a 40 <em>(sei in grave pericolo)</em>, da 40 a 70 <em>(dobbiamo tanto lavorare)</em>, da 60 a 100 <em>(tutto ciò che va fatto per rimanere qui)</em>.</p></div>
+    <div class="card anim-in anim-in-1">
       <div class="form-group"><label>Nome del Brand</label><input type="text" id="brandName" placeholder="es. Nike, Apple, AvantGrade..."></div>
       <div class="form-group"><label>Settore di riferimento</label><input type="text" id="sectorName" placeholder="es. Digital Marketing, Moda, Food & Beverage..."></div>
       <button class="btn btn-primary btn-full" id="btnStep1" disabled>Continua &rarr;</button></div>
@@ -168,11 +169,10 @@ h1,h2,h3,h4{font-family:'Outfit',sans-serif;font-weight:700;letter-spacing:-.02e
   <div id="step2" class="hidden">
     <div class="card anim-in">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <h2 style="margin:0">Rispondi su <span id="brandTitle" style="color:var(--orange)"></span></h2>
+        <h2 style="margin:0">Racconta <span id="brandTitle" style="color:var(--orange)"></span></h2>
         <button class="btn btn-secondary" id="btnBack1" style="padding:8px 16px;font-size:.85rem">&larr; Indietro</button></div>
-      <p style="color:var(--text2);margin-bottom:24px">Inserisci le risposte corrette. Le AI cercheranno queste informazioni sul web.</p>
       <div id="questionsContainer"></div>
-      <button class="btn btn-primary btn-full" id="btnAnalyze" disabled>🚀 Analizza con le AI</button></div>
+      <button class="btn btn-primary btn-full" id="btnAnalyze" disabled>Scopri cosa dicono le AI</button></div>
   </div>
   <div id="step3" class="hidden">
     <div class="score-hero anim-in" id="scoreHero"><div class="label">Punteggio complessivo di Brand AI Integrity</div><div class="value"><span id="scoreValue">0</span><span class="suffix">/100</span></div><div class="judgment" id="scoreJudgment"></div></div>
@@ -196,8 +196,8 @@ h1,h2,h3,h4{font-family:'Outfit',sans-serif;font-weight:700;letter-spacing:-.02e
 <script>
 const state={brandName:'',sector:'',email:'',userAnswers:{},questions:[],socialOptions:[],results:null};
 const $=id=>document.getElementById(id);
-function showStep(n){[$('step1'),$('step2'),$('step3')].forEach((s,i)=>s.classList.toggle('hidden',i!==n-1));$('emailGate').classList.add('hidden');['dot1','dot2','dot3'].forEach((id,i)=>{$(id).className='step-dot '+(i<n-1?'done':i===n-1?'active':'pending')});['line1','line2'].forEach((id,i)=>{$(id).className='step-line'+(i<n-1?' done':'')});window.scrollTo({top:0,behavior:'smooth'})}
-function showGate(){[$('step1'),$('step2'),$('step3')].forEach(s=>s.classList.add('hidden'));$('emailGate').classList.remove('hidden');['dot1','dot2','dot3'].forEach((id,i)=>{$(id).className='step-dot '+(i<2?'done':'active')});['line1','line2'].forEach((id,i)=>{$(id).className='step-line done'});window.scrollTo({top:0,behavior:'smooth'})}
+function showStep(n){[$('step1'),$('step2'),$('step3')].forEach((s,i)=>s.classList.toggle('hidden',i!==n-1));$('emailGate').classList.add('hidden');document.querySelector('.steps').style.display=n===3?'none':'flex';['dot1','dot2','dot3'].forEach((id,i)=>{$(id).className='step-dot '+(i<n-1?'done':i===n-1?'active':'pending')});['line1','line2'].forEach((id,i)=>{$(id).className='step-line'+(i<n-1?' done':'')});window.scrollTo({top:0,behavior:'smooth'})}
+function showGate(){[$('step1'),$('step2'),$('step3')].forEach(s=>s.classList.add('hidden'));$('emailGate').classList.remove('hidden');document.querySelector('.steps').style.display='none';['dot1','dot2','dot3'].forEach((id,i)=>{$(id).className='step-dot '+(i<2?'done':'active')});['line1','line2'].forEach((id,i)=>{$(id).className='step-line done'});window.scrollTo({top:0,behavior:'smooth'})}
 $('brandName').addEventListener('input',chk1);$('sectorName').addEventListener('input',chk1);
 function chk1(){state.brandName=$('brandName').value.trim();state.sector=$('sectorName').value.trim();$('btnStep1').disabled=!state.brandName||!state.sector}
 $('btnStep1').addEventListener('click',async()=>{try{const r=await fetch('/api/questions');const d=await r.json();state.questions=d.questions;state.socialOptions=d.social_options}catch(e){alert('Errore caricamento domande.');return}buildQ();$('brandTitle').textContent=state.brandName;showStep(2)});
@@ -208,13 +208,13 @@ d.innerHTML=`<label>${lb}</label><textarea id="qa_${i}" placeholder="Scrivi qui 
 function chk2(){let v=true;state.questions.forEach((q,i)=>{const val=state.userAnswers[i];if(!val||(typeof val==='string'&&!val.trim()))v=false});$('btnAnalyze').disabled=!v}
 $('btnBack1').addEventListener('click',()=>showStep(1));
 $('btnAnalyze').addEventListener('click',()=>runAnalysis());
-const PM={gemini:['Gemini studia il tuo brand... 🔮','Gemini consulta il web... 🌐','Gemini elabora... ⚡','Gemini ragiona... 🧠','Gemini quasi pronto... ✨'],chatgpt:['ChatGPT cerca info... 💬','ChatGPT naviga il web... 🕵️','ChatGPT analizza... 🔍','ChatGPT prepara la risposta... ✨','ChatGPT ci pensa... 🤔'],eval:['Confrontiamo le risposte... ⚖️','Il giudice AI valuta... 📊','Calcoliamo il tuo score... 🎯'],recommendation:['Chi consigliano le AI? 🏆'],comment:['Analisi qualitativa... ✨']};
+const QT={products:'i prodotti',sector:'il settore',target:'il pubblico target',locations:'le sedi',social:'i canali social',website:'il sito web'};
 async function runAnalysis(){$('loadingOverlay').classList.add('visible');$('loadingPhase').textContent='Preparazione analisi...';$('loadingSub').textContent='Connessione alle AI';$('orbRing').style.strokeDashoffset='439.8';$('orbPct').innerHTML='0<span class="orb-pct-sym">%</span>';
 const body={brand_name:state.brandName,sector:state.sector,user_answers:{}};for(const[k,v]of Object.entries(state.userAnswers))body.user_answers[String(k)]=String(v);
 try{const resp=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const reader=resp.body.getReader();const dec=new TextDecoder();let buf='';
 while(true){const{done,value}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const lines=buf.split('\n');buf=lines.pop();let et='',ed='';
 for(const l of lines){if(l.startsWith('event: '))et=l.slice(7).trim();else if(l.startsWith('data: ')){ed=l.slice(6);if(et&&ed){try{const d=JSON.parse(ed);if(et==='progress')hProg(d);else if(et==='complete')hComp(d)}catch(e){}}et='';ed=''}}}}catch(e){$('loadingOverlay').classList.remove('visible');alert('Errore. Riprova.')}}
-function hProg(d){const pct=Math.min(100,Math.round((d.step/d.total)*100));const circ=439.8;$('orbRing').style.strokeDashoffset=circ-(circ*pct/100);$('orbPct').innerHTML=pct+'<span class="orb-pct-sym">%</span>';const msgs=PM[d.phase]||['Elaborazione...'];const qn=d.qn||1;$('loadingPhase').textContent=msgs[(qn-1)%msgs.length];$('loadingSub').textContent=d.msg||''}
+function hProg(d){const pct=Math.min(100,Math.round((d.step/d.total)*100));const circ=439.8;$('orbRing').style.strokeDashoffset=circ-(circ*pct/100);$('orbPct').innerHTML=pct+'<span class="orb-pct-sym">%</span>';const qi=(d.qn||1)-1;const q=state.questions[qi];const topic=q?QT[q.id]||'il brand':'il brand';let phase='Elaborazione...';if(d.phase==='gemini')phase='Gemini verifica '+topic+' di '+state.brandName;else if(d.phase==='chatgpt')phase='ChatGPT verifica '+topic+' di '+state.brandName;else if(d.phase==='eval')phase='Valutazione: '+topic+' di '+state.brandName;else if(d.phase==='recommendation')phase='Chi consigliano le AI? 🏆';else if(d.phase==='comment')phase='Analisi qualitativa in corso...';$('loadingPhase').textContent=phase;$('loadingSub').textContent=d.msg||''}
 function hComp(d){state.results=d;$('loadingOverlay').classList.remove('visible');showGate()}
 function cfs(s){return s>=80?'#4CAF50':s>=60?'#FF9800':'#F44336'}
 function animC(el,target,dur=1500){const st=performance.now();function tick(now){const t=Math.min(1,(now-st)/dur);const ease=1-Math.pow(1-t,3);el.textContent=Math.round(target*ease);if(t<1)requestAnimationFrame(tick)}requestAnimationFrame(tick)}
