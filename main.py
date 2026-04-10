@@ -658,9 +658,15 @@ async def analyze(body: AnalyzeReq):
         })
         reco = {}
         for an in ["gemini", "openai"]:
-            a, e = await asyncio.to_thread(gen_reco, sector, an)
-            if not e and a:
-                reco[an] = a
+            try:
+                a, e = await asyncio.wait_for(
+                    asyncio.to_thread(gen_reco, sector, an),
+                    timeout=30,
+                )
+                if not e and a:
+                    reco[an] = a
+            except asyncio.TimeoutError:
+                errors.append(f"Recommendation {an}: timeout")
         step += 2
 
         # Phase 4: Summary
@@ -688,7 +694,13 @@ async def analyze(body: AnalyzeReq):
             "step": step, "total": total, "phase": "comment",
             "msg": "Generazione analisi qualitativa...",
         })
-        comment = await asyncio.to_thread(gen_comment, bn, sector, summ, {str(k): v for k, v in ev_res.items()})
+        try:
+            comment = await asyncio.wait_for(
+                asyncio.to_thread(gen_comment, bn, sector, summ, {str(k): v for k, v in ev_res.items()}),
+                timeout=30,
+            )
+        except asyncio.TimeoutError:
+            comment = "Analisi non disponibile."
 
         yield sse("complete", {
             "summary": summ,
@@ -699,7 +711,15 @@ async def analyze(body: AnalyzeReq):
             "errors": errors,
         })
 
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 class EmailReq(BaseModel):
