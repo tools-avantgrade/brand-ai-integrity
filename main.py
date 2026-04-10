@@ -749,6 +749,33 @@ class EmailReq(BaseModel):
     qualitative_comment: str
 
 
+@app.get("/api/debug-email")
+async def debug_email():
+    u = env("SMTP2GO_USERNAME")
+    pw = env("SMTP2GO_PASSWORD")
+    h = env("SMTP2GO_HOST", "mail.smtp2go.com")
+    p = env("SMTP2GO_PORT", "587")
+    s = env("SMTP2GO_SENDER", "noreply@avantgrade.com")
+    config = {
+        "host": h,
+        "port": p,
+        "sender": s,
+        "username_set": bool(u),
+        "password_set": bool(pw),
+    }
+    if not u or not pw:
+        return {"status": "error", "message": "SMTP2GO credentials missing", "config": config}
+    try:
+        import socket
+        socket.setdefaulttimeout(10)
+        with smtplib.SMTP(h, int(p), timeout=10) as srv:
+            srv.starttls()
+            srv.login(u, pw)
+        return {"status": "ok", "message": "SMTP connection successful", "config": config}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "config": config}
+
+
 @app.post("/api/send-email")
 async def email_route(b: EmailReq):
     pdf = make_pdf(
