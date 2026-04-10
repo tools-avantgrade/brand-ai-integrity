@@ -751,29 +751,13 @@ class EmailReq(BaseModel):
 
 @app.get("/api/debug-email")
 async def debug_email():
-    u = env("SMTP2GO_USERNAME")
-    pw = env("SMTP2GO_PASSWORD")
-    h = env("SMTP2GO_HOST", "mail.smtp2go.com")
-    p = env("SMTP2GO_PORT", "587")
-    s = env("SMTP2GO_SENDER", "noreply@avantgrade.com")
-    config = {
-        "host": h,
-        "port": p,
-        "sender": s,
-        "username_set": bool(u),
-        "password_set": bool(pw),
+    return {
+        "SMTP2GO_HOST": env("SMTP2GO_HOST", "(default: mail.smtp2go.com)"),
+        "SMTP2GO_PORT": env("SMTP2GO_PORT", "(default: 587)"),
+        "SMTP2GO_SENDER": env("SMTP2GO_SENDER", "(default: noreply@avantgrade.com)"),
+        "SMTP2GO_USERNAME": "SET" if env("SMTP2GO_USERNAME") else "MISSING",
+        "SMTP2GO_PASSWORD": "SET" if env("SMTP2GO_PASSWORD") else "MISSING",
     }
-    if not u or not pw:
-        return {"status": "error", "message": "SMTP2GO credentials missing", "config": config}
-    try:
-        import socket
-        socket.setdefaulttimeout(10)
-        with smtplib.SMTP(h, int(p), timeout=10) as srv:
-            srv.starttls()
-            srv.login(u, pw)
-        return {"status": "ok", "message": "SMTP connection successful", "config": config}
-    except Exception as e:
-        return {"status": "error", "message": str(e), "config": config}
 
 
 @app.post("/api/send-email")
