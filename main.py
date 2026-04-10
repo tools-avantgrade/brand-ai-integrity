@@ -40,6 +40,7 @@ app = FastAPI(title="Brand AI Integrity")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 MATCH_THRESHOLD = 0.75
+PARTIAL_THRESHOLD = 0.50
 SOCIAL_OPTIONS = ["Instagram", "Facebook", "LinkedIn", "TikTok", "YouTube", "X (Twitter)"]
 
 QUESTIONS = [
@@ -232,11 +233,16 @@ def eval_batch(question, ai_answers, user_answer, retry=False):
 
 def gen_comment(bn, sector, summary, eval_results):
     wrong = []
+    partial_q = []
     for idx, res in eval_results.items():
-        if not res.get("is_correct", False):
-            i = int(idx)
-            if i < len(QUESTIONS):
-                wrong.append(QUESTIONS[i]["label"].replace("{BRAND_NAME}", bn))
+        status = res.get("status", "incorrect")
+        i = int(idx)
+        if i < len(QUESTIONS):
+            label = QUESTIONS[i]["label"].replace("{BRAND_NAME}", bn)
+            if status == "incorrect":
+                wrong.append(label)
+            elif status == "partial":
+                partial_q.append(label)
 
     p = (
         f'Sei un esperto di brand reputation e AI.\n'
@@ -244,7 +250,8 @@ def gen_comment(bn, sector, summary, eval_results):
         f'- Score: {summary["integrity_score"]}/100\n'
         f'- Gemini: {summary["ai_scores"].get("gemini", 0)}/100\n'
         f'- ChatGPT: {summary["ai_scores"].get("openai", 0)}/100\n'
-        f'- Errori: {", ".join(wrong) if wrong else "Nessuna"}\n\n'
+        f'- Errori: {", ".join(wrong) if wrong else "Nessuna"}\n'
+        f'- Parziali: {", ".join(partial_q) if partial_q else "Nessuna"}\n\n'
         f'Commento qualitativo italiano (4-5 frasi): risultato generale, aree critiche, 2-3 azioni concrete.\n'
         f'Professionale ma accessibile. No elenchi puntati.'
     )
@@ -318,6 +325,7 @@ def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, 
         ["", "", ""],
         ["Domande Totali", str(summary["total"]), ""],
         ["Corrette", str(summary["correct"]), ""],
+        ["Parziali", str(summary.get("partial", 0)), ""],
         ["Da Migliorare", str(summary["incorrect"]), ""],
     ]
     t = Table(data, colWidths=[2.5 * inch, 1.5 * inch, 2 * inch])
@@ -360,10 +368,11 @@ def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, 
         q = QUESTIONS[idx]
         qt = q["label"].replace("{BRAND_NAME}", bn)
         avg = result.get("average_score", 0)
-        ic = result.get("is_correct", False)
+        status = result.get("status", "incorrect")
         story.append(Paragraph(f"<b>DOMANDA {idx + 1}:</b> {qt}", shs))
-        scl = "#4CAF50" if ic else "#F44336"
-        std = [["Score", f"{avg:.2f}/1.00", "CORRETTA" if ic else "DA MIGLIORARE"]]
+        scl = "#4CAF50" if status == "correct" else ("#FF9800" if status == "partial" else "#F44336")
+        slabel = "CORRETTA" if status == "correct" else ("PARZIALE" if status == "partial" else "DA MIGLIORARE")
+        std = [["Score", f"{avg:.2f}/1.00", slabel]]
         stt = Table(std, colWidths=[1.5 * inch, 1.5 * inch, 2 * inch])
         stt.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(scl)),
@@ -464,6 +473,7 @@ def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment="")
     gs = summary.get("ai_scores", {}).get("gemini", 0) if summary else 0
     cs = summary.get("ai_scores", {}).get("openai", 0) if summary else 0
     correct = summary.get("correct", 0) if summary else 0
+    partial = summary.get("partial", 0) if summary else 0
     total = summary.get("total", 0) if summary else 0
     incorrect = summary.get("incorrect", 0) if summary else 0
 
@@ -526,6 +536,7 @@ def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment="")
 
             f'<p style="font-size:14px;color:#666;line-height:1.6;">'
             f'Su {total} domande analizzate: <b style="color:#4CAF50;">{correct} corrette</b>'
+            f'{f", <b style=&quot;color:#FF9800;&quot;>{partial} parziali</b>" if partial else ""}'
             f'{f", <b style=&quot;color:#F44336;&quot;>{incorrect} da migliorare</b>" if incorrect else ""}.</p>'
 
             f'{comment_html}'
@@ -649,6 +660,7 @@ async def analyze(body: AnalyzeReq):
                 avg = sum(scores) / len(scores)
                 ev_res[idx]["average_score"] = avg
                 ev_res[idx]["is_correct"] = avg >= MATCH_THRESHOLD
+                ev_res[idx]["status"] = "correct" if avg >= MATCH_THRESHOLD else ("partial" if avg >= PARTIAL_THRESHOLD else "incorrect")
             step += 1
 
         # Phase 3: Recommendation
@@ -680,11 +692,14 @@ async def analyze(body: AnalyzeReq):
             for an, sc in ails.items()
         }
         integrity = round(sum(aiavg.values()) / len(aiavg)) if aiavg else 0
-        correct = sum(1 for r in ev_res.values() if r.get("is_correct", False))
+        correct = sum(1 for r in ev_res.values() if r.get("status") == "correct")
+        partial = sum(1 for r in ev_res.values() if r.get("status") == "partial")
+        incorrect = sum(1 for r in ev_res.values() if r.get("status") == "incorrect")
         summ = {
             "total": len(ev_res),
             "correct": correct,
-            "incorrect": len(ev_res) - correct,
+            "partial": partial,
+            "incorrect": incorrect,
             "integrity_score": integrity,
             "ai_scores": aiavg,
         }
