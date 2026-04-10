@@ -756,6 +756,7 @@ async def email_route(b: EmailReq):
         b.user_answers, b.ai_answers, b.recommendation, b.qualitative_comment,
     )
     ok, msg = send_email(b.email, b.brand_name, pdf, b.sector, b.summary, b.qualitative_comment)
+    print(f"[EMAIL] to={b.email} brand={b.brand_name} success={ok} msg={msg}")
     return {"success": ok, "message": msg}
 
 
