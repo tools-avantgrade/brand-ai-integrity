@@ -128,7 +128,8 @@ def gen_reco(sector, ai):
                 model=env("GEMINI_MODEL", "gemini-2.5-flash"),
                 contents=p,
                 config=genai_types.GenerateContentConfig(
-                    temperature=0.3, max_output_tokens=8192,
+                    temperature=0.3, max_output_tokens=2048,
+                    thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
                     safety_settings=_safety(),
                 ),
             )
@@ -263,14 +264,15 @@ def gen_comment(bn, sector, summary, eval_results):
             model=env("GEMINI_MODEL", "gemini-2.5-flash"),
             contents=p,
             config=genai_types.GenerateContentConfig(
-                temperature=0.3, max_output_tokens=8192,
+                temperature=0.3, max_output_tokens=2048,
+                thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
                 safety_settings=_safety(),
             ),
         )
         if r and r.text:
             return r.text.strip()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[COMMENT] Error: {e}", flush=True)
     return "Analisi non disponibile."
 
 
