@@ -34,6 +34,8 @@ import urllib.request
 
 load_dotenv()
 
+API_SEMAPHORE = asyncio.Semaphore(10)
+
 app = FastAPI(title="Brand AI Integrity")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -439,7 +441,7 @@ def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, 
     story.append(Spacer(1, 0.5 * inch))
     ctas = ParagraphStyle("CTA", parent=ns, fontSize=12, textColor=colors.white,
                           alignment=TA_CENTER, fontName="Helvetica-Bold")
-    cta_link = '<link href="https://www.avantgrade.com/schedule-a-call" color="white">Vuoi migliorare? Parliamone insieme</link>'
+    cta_link = '<link href="https://www.avantgrade.com/geo#contattaci" color="white">Vuoi migliorare? Parliamone insieme</link>'
     ct = Table([[Paragraph(cta_link, ctas)]], colWidths=[5 * inch])
     ct.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#E87722")),
@@ -528,7 +530,7 @@ def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment="")
         f'le risposte di ciascuna AI e i suggerimenti per migliorare il tuo score.</p>'
         f'<hr style="border:1px solid #eee;margin:24px 0;">'
         f'<p style="text-align:center;margin:24px 0 8px;">'
-        f'<a href="https://www.avantgrade.com/schedule-a-call" '
+        f'<a href="https://www.avantgrade.com/geo#contattaci" '
         f'style="background:#E87722;color:white;padding:14px 36px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;display:inline-block;">'
         f'Vuoi migliorare il tuo Score? Parliamone</a></p>'
         f'<p style="text-align:center;font-size:12px;color:#999;margin-top:20px;">'
@@ -569,6 +571,14 @@ def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment="")
 
 
 # ============================================================
+# PARALLEL HELPER
+# ============================================================
+async def _call_ai(name, fn, *args):
+    async with API_SEMAPHORE:
+        return name, await asyncio.to_thread(fn, *args)
+
+
+# ============================================================
 # ROUTES
 # ============================================================
 @app.get("/", response_class=HTMLResponse)
@@ -598,57 +608,49 @@ async def analyze(body: AnalyzeReq):
         def sse(ev, d):
             return f"event: {ev}\ndata: {json.dumps(d, ensure_ascii=False)}\n\n"
 
-        ai_ans = {}
+        ai_ans = {idx: {} for idx in range(len(QUESTIONS))}
         errors = []
         total = len(QUESTIONS) * 2 + len(QUESTIONS) + 3
         step = 0
 
-        # Phase 1: Generate AI answers
+        # Phase 1: All AI generation calls in parallel
+        gen_coros = []
         for idx, q in enumerate(QUESTIONS):
-            ai_ans[idx] = {}
             ap = q["ai_prompt"].replace("{BRAND_NAME}", bn)
+            gen_coros.append(_call_ai(("gemini", idx), gen_gemini, bn, ap))
+            gen_coros.append(_call_ai(("openai", idx), gen_openai, bn, ap))
 
+        for future in asyncio.as_completed(gen_coros):
+            (ai_name, idx), (answer, error) = await future
+            step += 1
+            if error:
+                errors.append(f"{'Gemini' if ai_name == 'gemini' else 'ChatGPT'} Q{idx + 1}: {error}")
+            else:
+                ai_ans[idx][ai_name] = answer
             yield sse("progress", {
-                "step": step, "total": total, "phase": "gemini",
+                "step": step, "total": total,
+                "phase": "chatgpt" if ai_name == "openai" else "gemini",
                 "qn": idx + 1, "qt": len(QUESTIONS),
                 "msg": f"Domanda {idx + 1} di {len(QUESTIONS)}",
             })
-            a, e = await asyncio.to_thread(gen_gemini, bn, ap)
-            if e:
-                errors.append(f"Gemini Q{idx + 1}: {e}")
-            else:
-                ai_ans[idx]["gemini"] = a
-            step += 1
 
-            yield sse("progress", {
-                "step": step, "total": total, "phase": "chatgpt",
-                "qn": idx + 1, "qt": len(QUESTIONS),
-                "msg": f"Domanda {idx + 1} di {len(QUESTIONS)}",
-            })
-            a, e = await asyncio.to_thread(gen_openai, bn, ap)
-            if e:
-                errors.append(f"ChatGPT Q{idx + 1}: {e}")
-            else:
-                ai_ans[idx]["openai"] = a
-            step += 1
-
-        # Phase 2: Evaluate
-        ev_res = {}
-        for idx in sorted(ai_ans.keys()):
-            yield sse("progress", {
-                "step": step, "total": total, "phase": "eval",
-                "qn": idx + 1, "qt": len(QUESTIONS),
-                "msg": f"Valutazione domanda {idx + 1} di {len(QUESTIONS)}",
-            })
+        # Phase 2: All evaluations in parallel
+        eval_coros = []
+        for idx in range(len(QUESTIONS)):
             q = QUESTIONS[idx]
             qt = q["ai_prompt"].replace("{BRAND_NAME}", bn)
             uas = ua.get(str(idx), "")
-            b, be = await asyncio.to_thread(eval_batch, qt, ai_ans[idx], uas)
+            eval_coros.append(_call_ai(idx, eval_batch, qt, ai_ans[idx], uas))
+
+        ev_res = {}
+        for future in asyncio.as_completed(eval_coros):
+            idx, (b, be) = await future
+            step += 1
             ev_res[idx] = {}
             scores = []
             if be:
                 errors.append(f"Eval Q{idx + 1}: {be}")
-            else:
+            elif b:
                 for an in ["gemini", "openai"]:
                     if an in b:
                         ev_res[idx][an] = b[an]
@@ -657,25 +659,34 @@ async def analyze(body: AnalyzeReq):
                 avg = sum(scores) / len(scores)
                 ev_res[idx]["average_score"] = avg
                 ev_res[idx]["is_correct"] = avg >= MATCH_THRESHOLD
-                ev_res[idx]["status"] = "correct" if avg >= MATCH_THRESHOLD else ("partial" if avg >= PARTIAL_THRESHOLD else "incorrect")
-            step += 1
+                ev_res[idx]["status"] = (
+                    "correct" if avg >= MATCH_THRESHOLD
+                    else ("partial" if avg >= PARTIAL_THRESHOLD else "incorrect")
+                )
+            yield sse("progress", {
+                "step": step, "total": total, "phase": "eval",
+                "qn": idx + 1, "qt": len(QUESTIONS),
+                "msg": f"Valutazione domanda {idx + 1} di {len(QUESTIONS)}",
+            })
 
-        # Phase 3: Recommendation
+        # Phase 3: Recommendations in parallel
         yield sse("progress", {
             "step": step, "total": total, "phase": "recommendation",
             "msg": "Chi consigliano le AI?...",
         })
         reco = {}
-        for an in ["gemini", "openai"]:
-            try:
-                a, e = await asyncio.wait_for(
-                    asyncio.to_thread(gen_reco, sector, an),
-                    timeout=30,
-                )
-                if not e and a:
-                    reco[an] = a
-            except asyncio.TimeoutError:
-                errors.append(f"Recommendation {an}: timeout")
+        reco_results = await asyncio.gather(
+            _call_ai("gemini", gen_reco, sector, "gemini"),
+            _call_ai("openai", gen_reco, sector, "openai"),
+            return_exceptions=True,
+        )
+        for r in reco_results:
+            if isinstance(r, Exception):
+                errors.append(f"Recommendation: {r}")
+            else:
+                ai_name, (answer, error) = r
+                if not error and answer:
+                    reco[ai_name] = answer
         step += 2
 
         # Phase 4: Summary
