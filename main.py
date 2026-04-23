@@ -34,8 +34,6 @@ import urllib.request
 
 load_dotenv()
 
-API_SEMAPHORE = asyncio.Semaphore(10)
-
 app = FastAPI(title="Brand AI Integrity")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -88,13 +86,11 @@ def _safety():
 def gen_gemini(bn, q):
     try:
         client = google_genai.Client(api_key=env("GEMINI_API_KEY"))
-        google_search_tool = genai_types.Tool(google_search=genai_types.GoogleSearch())
         r = client.models.generate_content(
-            model=env("GEMINI_MODEL", "gemini-2.0-flash"),
+            model=env("GEMINI_MODEL", "gemini-2.5-flash"),
             contents=_build_prompt(bn, q),
             config=genai_types.GenerateContentConfig(
-                temperature=0.2, top_p=0.8, top_k=40, max_output_tokens=2048,
-                tools=[google_search_tool],
+                temperature=0.2, top_p=0.8, top_k=40, max_output_tokens=8192,
                 safety_settings=_safety(),
             ),
         )
@@ -128,13 +124,11 @@ def gen_reco(sector, ai):
     try:
         if ai == "gemini":
             client = google_genai.Client(api_key=env("GEMINI_API_KEY"))
-            google_search_tool = genai_types.Tool(google_search=genai_types.GoogleSearch())
             r = client.models.generate_content(
-                model=env("GEMINI_MODEL", "gemini-2.0-flash"),
+                model=env("GEMINI_MODEL", "gemini-2.5-flash"),
                 contents=p,
                 config=genai_types.GenerateContentConfig(
-                    temperature=0.3, max_output_tokens=1024,
-                    tools=[google_search_tool],
+                    temperature=0.3, max_output_tokens=8192,
                     safety_settings=_safety(),
                 ),
             )
@@ -192,26 +186,30 @@ def eval_batch(question, ai_answers, user_answer, retry=False):
     p += f"JSON: {{ {examples} }}"
 
     try:
-        client = google_genai.Client(api_key=env("GEMINI_API_KEY"))
-        r = client.models.generate_content(
-            model=env("EVALUATOR_MODEL", env("GEMINI_MODEL", "gemini-2.0-flash")),
-            contents=p,
-            config=genai_types.GenerateContentConfig(
-                temperature=0.2,
-                max_output_tokens=2048,
-                response_mime_type="application/json",
-                safety_settings=_safety(),
-            ),
+        c = OpenAI(api_key=env("OPENAI_API_KEY"))
+        r = c.chat.completions.create(
+            model=env("OPENAI_MODEL", "gpt-4o-mini"),
+            messages=[{"role": "user", "content": p}],
+            response_format={"type": "json_object"},
+            temperature=0.2,
+            max_tokens=2048,
         )
-        if not r or not r.candidates:
-            return None, "Blocked"
-        t = r.text.strip() if r.text else ""
+        t = r.choices[0].message.content.strip()
         if not t:
             return None, "Empty"
         if t.startswith("```"):
             lines = t.split("\n")
             t = "\n".join(lines[1:-1]).replace("```json", "").replace("```", "").strip()
-        b = json.loads(t)
+        raw = json.loads(t)
+        b = {}
+        for k, v in raw.items():
+            kl = k.lower()
+            if "openai" in kl or "chatgpt" in kl or "gpt" in kl:
+                b["openai"] = v
+            elif "gemini" in kl or "google" in kl:
+                b["gemini"] = v
+            else:
+                b[k] = v
         res = {}
         for n in names:
             if n in b:
@@ -252,16 +250,20 @@ def gen_comment(bn, sector, summary, eval_results):
         f'- ChatGPT: {summary["ai_scores"].get("openai", 0)}/100\n'
         f'- Errori: {", ".join(wrong) if wrong else "Nessuna"}\n'
         f'- Parziali: {", ".join(partial_q) if partial_q else "Nessuna"}\n\n'
-        f'Commento qualitativo italiano (4-5 frasi): risultato generale, aree critiche, 2-3 azioni concrete.\n'
-        f'Professionale ma accessibile. No elenchi puntati.'
+        f'Scrivi un commento qualitativo in italiano (8-10 frasi, circa 200 parole) strutturato cosi:\n'
+        f'1. Valutazione generale del risultato e cosa significa per il brand.\n'
+        f'2. Quali informazioni le AI rappresentano bene e quali no (sii specifico).\n'
+        f'3. Perche questo e un problema concreto per il business (es. clienti che cercano info, decisioni basate su AI).\n'
+        f'4. 3-4 azioni concrete e specifiche per migliorare (es. ottimizzare schema markup, aggiornare pagina Chi Siamo, ecc.).\n'
+        f'Professionale ma accessibile. No elenchi puntati, scrivi in paragrafi discorsivi.'
     )
     try:
         client = google_genai.Client(api_key=env("GEMINI_API_KEY"))
         r = client.models.generate_content(
-            model=env("EVALUATOR_MODEL", env("GEMINI_MODEL", "gemini-2.0-flash")),
+            model=env("GEMINI_MODEL", "gemini-2.5-flash"),
             contents=p,
             config=genai_types.GenerateContentConfig(
-                temperature=0.3, max_output_tokens=1024,
+                temperature=0.3, max_output_tokens=8192,
                 safety_settings=_safety(),
             ),
         )
@@ -571,14 +573,6 @@ def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment="")
 
 
 # ============================================================
-# PARALLEL HELPER
-# ============================================================
-async def _call_ai(name, fn, *args):
-    async with API_SEMAPHORE:
-        return name, await asyncio.to_thread(fn, *args)
-
-
-# ============================================================
 # ROUTES
 # ============================================================
 @app.get("/", response_class=HTMLResponse)
@@ -613,39 +607,59 @@ async def analyze(body: AnalyzeReq):
         total = len(QUESTIONS) * 2 + len(QUESTIONS) + 3
         step = 0
 
-        # Phase 1: All AI generation calls in parallel
-        gen_coros = []
+        # Phase 1: Gemini + ChatGPT in parallel per question
         for idx, q in enumerate(QUESTIONS):
+            ai_ans[idx] = {}
             ap = q["ai_prompt"].replace("{BRAND_NAME}", bn)
-            gen_coros.append(_call_ai(("gemini", idx), gen_gemini, bn, ap))
-            gen_coros.append(_call_ai(("openai", idx), gen_openai, bn, ap))
 
-        for future in asyncio.as_completed(gen_coros):
-            (ai_name, idx), (answer, error) = await future
-            step += 1
-            if error:
-                errors.append(f"{'Gemini' if ai_name == 'gemini' else 'ChatGPT'} Q{idx + 1}: {error}")
-            else:
-                ai_ans[idx][ai_name] = answer
             yield sse("progress", {
-                "step": step, "total": total,
-                "phase": "chatgpt" if ai_name == "openai" else "gemini",
+                "step": step, "total": total, "phase": "gemini",
                 "qn": idx + 1, "qt": len(QUESTIONS),
                 "msg": f"Domanda {idx + 1} di {len(QUESTIONS)}",
             })
 
-        # Phase 2: All evaluations in parallel
-        eval_coros = []
+            results = await asyncio.gather(
+                asyncio.to_thread(gen_gemini, bn, ap),
+                asyncio.to_thread(gen_openai, bn, ap),
+                return_exceptions=True,
+            )
+
+            for i, (ai_name, r) in enumerate([("gemini", results[0]), ("openai", results[1])]):
+                if isinstance(r, Exception):
+                    errors.append(f"{'Gemini' if ai_name == 'gemini' else 'ChatGPT'} Q{idx + 1}: {r}")
+                else:
+                    a, e = r
+                    if e:
+                        errors.append(f"{'Gemini' if ai_name == 'gemini' else 'ChatGPT'} Q{idx + 1}: {e}")
+                    elif a:
+                        ai_ans[idx][ai_name] = a
+            step += 2
+
+            yield sse("progress", {
+                "step": step, "total": total, "phase": "chatgpt",
+                "qn": idx + 1, "qt": len(QUESTIONS),
+                "msg": f"Domanda {idx + 1} di {len(QUESTIONS)}",
+            })
+
+            if idx < len(QUESTIONS) - 1:
+                await asyncio.sleep(2)
+
+        print(f"[ANALYSIS] Phase 1 done. AI answers: {[(k, list(v.keys())) for k, v in ai_ans.items()]}", flush=True)
+        if errors:
+            print(f"[ANALYSIS] Phase 1 errors: {errors}", flush=True)
+
+        # Phase 2: Evaluate (sequential to avoid Gemini rate limits)
+        ev_res = {}
         for idx in range(len(QUESTIONS)):
+            yield sse("progress", {
+                "step": step, "total": total, "phase": "eval",
+                "qn": idx + 1, "qt": len(QUESTIONS),
+                "msg": f"Valutazione domanda {idx + 1} di {len(QUESTIONS)}",
+            })
             q = QUESTIONS[idx]
             qt = q["ai_prompt"].replace("{BRAND_NAME}", bn)
             uas = ua.get(str(idx), "")
-            eval_coros.append(_call_ai(idx, eval_batch, qt, ai_ans[idx], uas))
-
-        ev_res = {}
-        for future in asyncio.as_completed(eval_coros):
-            idx, (b, be) = await future
-            step += 1
+            b, be = await asyncio.to_thread(eval_batch, qt, ai_ans.get(idx, {}), uas)
             ev_res[idx] = {}
             scores = []
             if be:
@@ -663,30 +677,27 @@ async def analyze(body: AnalyzeReq):
                     "correct" if avg >= MATCH_THRESHOLD
                     else ("partial" if avg >= PARTIAL_THRESHOLD else "incorrect")
                 )
-            yield sse("progress", {
-                "step": step, "total": total, "phase": "eval",
-                "qn": idx + 1, "qt": len(QUESTIONS),
-                "msg": f"Valutazione domanda {idx + 1} di {len(QUESTIONS)}",
-            })
+            print(f"[ANALYSIS] Eval Q{idx + 1}: answers={list(ai_ans.get(idx, {}).keys())} scores={scores} error={be}", flush=True)
+            step += 1
 
-        # Phase 3: Recommendations in parallel
+        # Phase 3: Recommendation
         yield sse("progress", {
             "step": step, "total": total, "phase": "recommendation",
             "msg": "Chi consigliano le AI?...",
         })
         reco = {}
-        reco_results = await asyncio.gather(
-            _call_ai("gemini", gen_reco, sector, "gemini"),
-            _call_ai("openai", gen_reco, sector, "openai"),
-            return_exceptions=True,
-        )
-        for r in reco_results:
-            if isinstance(r, Exception):
-                errors.append(f"Recommendation: {r}")
-            else:
-                ai_name, (answer, error) = r
-                if not error and answer:
-                    reco[ai_name] = answer
+        for an in ["gemini", "openai"]:
+            try:
+                a, e = await asyncio.wait_for(
+                    asyncio.to_thread(gen_reco, sector, an),
+                    timeout=30,
+                )
+                if not e and a:
+                    reco[an] = a
+                elif e:
+                    errors.append(f"Recommendation {an}: {e}")
+            except asyncio.TimeoutError:
+                errors.append(f"Recommendation {an}: timeout")
         step += 2
 
         # Phase 4: Summary
@@ -724,6 +735,10 @@ async def analyze(body: AnalyzeReq):
             )
         except asyncio.TimeoutError:
             comment = "Analisi non disponibile."
+
+        if errors:
+            print(f"[ANALYSIS] All errors: {errors}", flush=True)
+        print(f"[ANALYSIS] Final scores: integrity={integrity} gemini={aiavg.get('gemini',0)} openai={aiavg.get('openai',0)}", flush=True)
 
         yield sse("complete", {
             "summary": summ,
