@@ -259,6 +259,7 @@ def gen_comment(bn, sector, summary, eval_results):
         f'4. 3-4 azioni concrete e specifiche per migliorare (es. ottimizzare schema markup, aggiornare pagina Chi Siamo, ecc.).\n'
         f'Professionale ma accessibile. No elenchi puntati, scrivi in paragrafi discorsivi.'
     )
+    # Try Gemini first
     try:
         client = google_genai.Client(api_key=env("GEMINI_API_KEY"))
         r = client.models.generate_content(
@@ -271,10 +272,25 @@ def gen_comment(bn, sector, summary, eval_results):
             ),
         )
         if r and r.text:
-            return r.text.strip()
+            return r.text.strip(), None
     except Exception as e:
-        print(f"[COMMENT] Error: {e}", flush=True)
-    return "Analisi non disponibile."
+        print(f"[COMMENT] Gemini error: {e}", flush=True)
+
+    # Fallback to OpenAI
+    try:
+        c = OpenAI(api_key=env("OPENAI_API_KEY"))
+        r = c.chat.completions.create(
+            model=env("OPENAI_MODEL", "gpt-4o-mini"),
+            messages=[{"role": "user", "content": p}],
+            temperature=0.3,
+            max_tokens=2048,
+        )
+        if r.choices and r.choices[0].message.content:
+            return r.choices[0].message.content.strip(), None
+    except Exception as e:
+        print(f"[COMMENT] OpenAI fallback error: {e}", flush=True)
+
+    return None, "Both Gemini and OpenAI failed"
 
 
 # ============================================================
