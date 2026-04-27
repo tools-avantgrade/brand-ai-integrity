@@ -231,7 +231,7 @@ def eval_batch(question, ai_answers, user_answer, retry=False):
         return None, str(e)
 
 
-def gen_comment(bn, sector, summary, eval_results):
+def _build_comment_prompt(bn, sector, summary, eval_results):
     wrong = []
     partial_q = []
     for idx, res in eval_results.items():
@@ -244,7 +244,7 @@ def gen_comment(bn, sector, summary, eval_results):
             elif status == "partial":
                 partial_q.append(label)
 
-    p = (
+    return (
         f'Sei un esperto di brand reputation e AI.\n'
         f'Risultati Brand AI Integrity per "{bn}" (settore: {sector}):\n'
         f'- Score: {summary["integrity_score"]}/100\n'
@@ -259,7 +259,10 @@ def gen_comment(bn, sector, summary, eval_results):
         f'4. 3-4 azioni concrete e specifiche per migliorare (es. ottimizzare schema markup, aggiornare pagina Chi Siamo, ecc.).\n'
         f'Professionale ma accessibile. No elenchi puntati, scrivi in paragrafi discorsivi.'
     )
-    # Try Gemini first
+
+
+def gen_comment_gemini(bn, sector, summary, eval_results):
+    p = _build_comment_prompt(bn, sector, summary, eval_results)
     try:
         client = google_genai.Client(api_key=env("GEMINI_API_KEY"))
         r = client.models.generate_content(
@@ -273,10 +276,13 @@ def gen_comment(bn, sector, summary, eval_results):
         )
         if r and r.text:
             return r.text.strip(), None
+        return None, "Empty"
     except Exception as e:
-        print(f"[COMMENT] Gemini error: {e}", flush=True)
+        return None, str(e)
 
-    # Fallback to OpenAI
+
+def gen_comment_openai(bn, sector, summary, eval_results):
+    p = _build_comment_prompt(bn, sector, summary, eval_results)
     try:
         c = OpenAI(api_key=env("OPENAI_API_KEY"))
         r = c.chat.completions.create(
@@ -287,10 +293,9 @@ def gen_comment(bn, sector, summary, eval_results):
         )
         if r.choices and r.choices[0].message.content:
             return r.choices[0].message.content.strip(), None
+        return None, "Empty"
     except Exception as e:
-        print(f"[COMMENT] OpenAI fallback error: {e}", flush=True)
-
-    return None, "Both Gemini and OpenAI failed"
+        return None, str(e)
 
 
 # ============================================================
@@ -663,12 +668,14 @@ async def analyze(body: AnalyzeReq):
         def sse(ev, d):
             return f"event: {ev}\ndata: {json.dumps(d, ensure_ascii=False)}\n\n"
 
+        KEEPALIVE_INTERVAL = 8
+
         ai_ans = {idx: {} for idx in range(len(QUESTIONS))}
         errors = []
         total = len(QUESTIONS) * 2 + len(QUESTIONS) + 3
         step = 0
 
-        # Phase 1: Gemini + ChatGPT in parallel per question (with timeout + retry)
+        # Phase 1: Gemini + ChatGPT in parallel per question (with timeout + keepalive)
         for idx, q in enumerate(QUESTIONS):
             ai_ans[idx] = {}
             ap = q["ai_prompt"].replace("{BRAND_NAME}", bn)
@@ -679,11 +686,16 @@ async def analyze(body: AnalyzeReq):
                 "msg": f"Domanda {idx + 1} di {len(QUESTIONS)}",
             })
 
-            results = await asyncio.gather(
+            gather_task = asyncio.ensure_future(asyncio.gather(
                 _safe_call(gen_gemini, bn, ap),
                 _safe_call(gen_openai, bn, ap),
                 return_exceptions=True,
-            )
+            ))
+            while not gather_task.done():
+                done, _ = await asyncio.wait({gather_task}, timeout=KEEPALIVE_INTERVAL)
+                if not done:
+                    yield ": keepalive\n\n"
+            results = gather_task.result()
 
             for ai_name, r in [("gemini", results[0]), ("openai", results[1])]:
                 if isinstance(r, Exception):
@@ -709,7 +721,7 @@ async def analyze(body: AnalyzeReq):
         if errors:
             print(f"[ANALYSIS] Phase 1 errors: {errors}", flush=True)
 
-        # Phase 2: Evaluate in parallel batches of 3 (uses OpenAI, safe to parallelize)
+        # Phase 2: Evaluate in parallel batches of 3 (with keepalive)
         ev_res = {}
         EVAL_BATCH = 3
         for batch_start in range(0, len(QUESTIONS), EVAL_BATCH):
@@ -731,7 +743,12 @@ async def analyze(body: AnalyzeReq):
                     _safe_call(eval_batch, qt, ai_ans.get(idx, {}), uas, timeout=EVAL_CALL_TIMEOUT)
                 )
 
-            batch_results = await asyncio.gather(*eval_coros, return_exceptions=True)
+            eval_task = asyncio.ensure_future(asyncio.gather(*eval_coros, return_exceptions=True))
+            while not eval_task.done():
+                done, _ = await asyncio.wait({eval_task}, timeout=KEEPALIVE_INTERVAL)
+                if not done:
+                    yield ": keepalive\n\n"
+            batch_results = eval_task.result()
 
             for idx, result in zip(batch_indices, batch_results):
                 ev_res[idx] = {}
@@ -759,17 +776,22 @@ async def analyze(body: AnalyzeReq):
 
             step += len(batch_indices)
 
-        # Phase 3: Recommendation - PARALLEL (Gemini + ChatGPT at the same time)
+        # Phase 3: Recommendation - PARALLEL (with keepalive, no retry)
         yield sse("progress", {
             "step": step, "total": total, "phase": "recommendation",
             "msg": "Chi consigliano le AI?...",
         })
         reco = {}
-        reco_results = await asyncio.gather(
-            _safe_call(gen_reco, sector, "gemini"),
-            _safe_call(gen_reco, sector, "openai"),
+        reco_task = asyncio.ensure_future(asyncio.gather(
+            _safe_call(gen_reco, sector, "gemini", retries=0),
+            _safe_call(gen_reco, sector, "openai", retries=0),
             return_exceptions=True,
-        )
+        ))
+        while not reco_task.done():
+            done, _ = await asyncio.wait({reco_task}, timeout=KEEPALIVE_INTERVAL)
+            if not done:
+                yield ": keepalive\n\n"
+        reco_results = reco_task.result()
         for ai_name, result in zip(["gemini", "openai"], reco_results):
             if isinstance(result, Exception):
                 errors.append(f"Recommendation {ai_name}: {result}")
@@ -804,18 +826,41 @@ async def analyze(body: AnalyzeReq):
             "ai_scores": aiavg,
         }
 
-        # Phase 5: Qualitative comment (with timeout + retry)
+        # Phase 5: Qualitative comment - Gemini then OpenAI fallback (separate timeouts + keepalive)
+        ev_str = {str(k): v for k, v in ev_res.items()}
+
         yield sse("progress", {
             "step": step, "total": total, "phase": "comment",
             "msg": "Generazione analisi qualitativa...",
         })
-        comment, cerr = await _safe_call(
-            gen_comment, bn, sector, summ, {str(k): v for k, v in ev_res.items()},
-            timeout=AI_CALL_TIMEOUT,
+
+        comment_task = asyncio.ensure_future(
+            _safe_call(gen_comment_gemini, bn, sector, summ, ev_str, timeout=25, retries=0)
         )
+        while not comment_task.done():
+            done, _ = await asyncio.wait({comment_task}, timeout=KEEPALIVE_INTERVAL)
+            if not done:
+                yield ": keepalive\n\n"
+        comment, cerr = comment_task.result()
+
+        if cerr or not comment:
+            print(f"[COMMENT] Gemini failed ({cerr}), trying OpenAI...", flush=True)
+            yield sse("progress", {
+                "step": step, "total": total, "phase": "comment",
+                "msg": "Finalizzazione analisi...",
+            })
+            comment_task = asyncio.ensure_future(
+                _safe_call(gen_comment_openai, bn, sector, summ, ev_str, timeout=25, retries=0)
+            )
+            while not comment_task.done():
+                done, _ = await asyncio.wait({comment_task}, timeout=KEEPALIVE_INTERVAL)
+                if not done:
+                    yield ": keepalive\n\n"
+            comment, cerr = comment_task.result()
+
         if cerr or not comment:
             comment = "Analisi non disponibile."
-            print(f"[COMMENT] Fallback: {cerr}", flush=True)
+            print(f"[COMMENT] Both AIs failed: {cerr}", flush=True)
 
         if errors:
             print(f"[ANALYSIS] All errors: {errors}", flush=True)
