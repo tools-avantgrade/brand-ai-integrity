@@ -91,6 +91,7 @@ def gen_gemini(bn, q):
             contents=_build_prompt(bn, q),
             config=genai_types.GenerateContentConfig(
                 temperature=0.2, top_p=0.8, top_k=40, max_output_tokens=8192,
+                thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
                 safety_settings=_safety(),
             ),
         )
@@ -274,6 +275,48 @@ def gen_comment(bn, sector, summary, eval_results):
     except Exception as e:
         print(f"[COMMENT] Error: {e}", flush=True)
     return "Analisi non disponibile."
+
+
+# ============================================================
+# ASYNC HELPERS
+# ============================================================
+AI_CALL_TIMEOUT = 45
+EVAL_CALL_TIMEOUT = 30
+MAX_RETRIES = 1
+RETRY_BASE_DELAY = 3
+
+
+def _is_retryable(error_str):
+    if not error_str:
+        return False
+    e = error_str.lower()
+    return any(k in e for k in ["429", "rate", "resource_exhausted", "503", "unavailable", "overloaded"])
+
+
+async def _safe_call(fn, *args, timeout=AI_CALL_TIMEOUT, retries=MAX_RETRIES):
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(fn, *args),
+                timeout=timeout,
+            )
+            value, error = result
+            if error and attempt < retries and _is_retryable(error):
+                print(f"[RETRY] {fn.__name__} attempt {attempt + 1}: {error}", flush=True)
+                await asyncio.sleep(RETRY_BASE_DELAY * (attempt + 1))
+                continue
+            return value, error
+        except asyncio.TimeoutError:
+            last_error = "Timeout"
+            print(f"[TIMEOUT] {fn.__name__} attempt {attempt + 1} after {timeout}s", flush=True)
+            if attempt < retries:
+                await asyncio.sleep(RETRY_BASE_DELAY)
+                continue
+        except Exception as e:
+            last_error = str(e)
+            break
+    return None, last_error
 
 
 # ============================================================
@@ -609,7 +652,7 @@ async def analyze(body: AnalyzeReq):
         total = len(QUESTIONS) * 2 + len(QUESTIONS) + 3
         step = 0
 
-        # Phase 1: Gemini + ChatGPT in parallel per question
+        # Phase 1: Gemini + ChatGPT in parallel per question (with timeout + retry)
         for idx, q in enumerate(QUESTIONS):
             ai_ans[idx] = {}
             ap = q["ai_prompt"].replace("{BRAND_NAME}", bn)
@@ -621,12 +664,12 @@ async def analyze(body: AnalyzeReq):
             })
 
             results = await asyncio.gather(
-                asyncio.to_thread(gen_gemini, bn, ap),
-                asyncio.to_thread(gen_openai, bn, ap),
+                _safe_call(gen_gemini, bn, ap),
+                _safe_call(gen_openai, bn, ap),
                 return_exceptions=True,
             )
 
-            for i, (ai_name, r) in enumerate([("gemini", results[0]), ("openai", results[1])]):
+            for ai_name, r in [("gemini", results[0]), ("openai", results[1])]:
                 if isinstance(r, Exception):
                     errors.append(f"{'Gemini' if ai_name == 'gemini' else 'ChatGPT'} Q{idx + 1}: {r}")
                 else:
@@ -644,62 +687,82 @@ async def analyze(body: AnalyzeReq):
             })
 
             if idx < len(QUESTIONS) - 1:
-                await asyncio.sleep(2)
+                await asyncio.sleep(0.5)
 
         print(f"[ANALYSIS] Phase 1 done. AI answers: {[(k, list(v.keys())) for k, v in ai_ans.items()]}", flush=True)
         if errors:
             print(f"[ANALYSIS] Phase 1 errors: {errors}", flush=True)
 
-        # Phase 2: Evaluate (sequential to avoid Gemini rate limits)
+        # Phase 2: Evaluate in parallel batches of 3 (uses OpenAI, safe to parallelize)
         ev_res = {}
-        for idx in range(len(QUESTIONS)):
+        EVAL_BATCH = 3
+        for batch_start in range(0, len(QUESTIONS), EVAL_BATCH):
+            batch_end = min(batch_start + EVAL_BATCH, len(QUESTIONS))
+            batch_indices = list(range(batch_start, batch_end))
+
             yield sse("progress", {
                 "step": step, "total": total, "phase": "eval",
-                "qn": idx + 1, "qt": len(QUESTIONS),
-                "msg": f"Valutazione domanda {idx + 1} di {len(QUESTIONS)}",
+                "qn": batch_start + 1, "qt": len(QUESTIONS),
+                "msg": f"Valutazione domande {batch_start + 1}-{batch_end} di {len(QUESTIONS)}",
             })
-            q = QUESTIONS[idx]
-            qt = q["ai_prompt"].replace("{BRAND_NAME}", bn)
-            uas = ua.get(str(idx), "")
-            b, be = await asyncio.to_thread(eval_batch, qt, ai_ans.get(idx, {}), uas)
-            ev_res[idx] = {}
-            scores = []
-            if be:
-                errors.append(f"Eval Q{idx + 1}: {be}")
-            elif b:
-                for an in ["gemini", "openai"]:
-                    if an in b:
-                        ev_res[idx][an] = b[an]
-                        scores.append(b[an]["score"])
-            if scores:
-                avg = sum(scores) / len(scores)
-                ev_res[idx]["average_score"] = avg
-                ev_res[idx]["is_correct"] = avg >= MATCH_THRESHOLD
-                ev_res[idx]["status"] = (
-                    "correct" if avg >= MATCH_THRESHOLD
-                    else ("partial" if avg >= PARTIAL_THRESHOLD else "incorrect")
-                )
-            print(f"[ANALYSIS] Eval Q{idx + 1}: answers={list(ai_ans.get(idx, {}).keys())} scores={scores} error={be}", flush=True)
-            step += 1
 
-        # Phase 3: Recommendation
+            eval_coros = []
+            for idx in batch_indices:
+                q = QUESTIONS[idx]
+                qt = q["ai_prompt"].replace("{BRAND_NAME}", bn)
+                uas = ua.get(str(idx), "")
+                eval_coros.append(
+                    _safe_call(eval_batch, qt, ai_ans.get(idx, {}), uas, timeout=EVAL_CALL_TIMEOUT)
+                )
+
+            batch_results = await asyncio.gather(*eval_coros, return_exceptions=True)
+
+            for idx, result in zip(batch_indices, batch_results):
+                ev_res[idx] = {}
+                scores = []
+                if isinstance(result, Exception):
+                    errors.append(f"Eval Q{idx + 1}: {result}")
+                else:
+                    b, be = result
+                    if be:
+                        errors.append(f"Eval Q{idx + 1}: {be}")
+                    elif b:
+                        for an in ["gemini", "openai"]:
+                            if an in b:
+                                ev_res[idx][an] = b[an]
+                                scores.append(b[an]["score"])
+                if scores:
+                    avg = sum(scores) / len(scores)
+                    ev_res[idx]["average_score"] = avg
+                    ev_res[idx]["is_correct"] = avg >= MATCH_THRESHOLD
+                    ev_res[idx]["status"] = (
+                        "correct" if avg >= MATCH_THRESHOLD
+                        else ("partial" if avg >= PARTIAL_THRESHOLD else "incorrect")
+                    )
+                print(f"[ANALYSIS] Eval Q{idx + 1}: scores={scores}", flush=True)
+
+            step += len(batch_indices)
+
+        # Phase 3: Recommendation - PARALLEL (Gemini + ChatGPT at the same time)
         yield sse("progress", {
             "step": step, "total": total, "phase": "recommendation",
             "msg": "Chi consigliano le AI?...",
         })
         reco = {}
-        for an in ["gemini", "openai"]:
-            try:
-                a, e = await asyncio.wait_for(
-                    asyncio.to_thread(gen_reco, sector, an),
-                    timeout=30,
-                )
+        reco_results = await asyncio.gather(
+            _safe_call(gen_reco, sector, "gemini"),
+            _safe_call(gen_reco, sector, "openai"),
+            return_exceptions=True,
+        )
+        for ai_name, result in zip(["gemini", "openai"], reco_results):
+            if isinstance(result, Exception):
+                errors.append(f"Recommendation {ai_name}: {result}")
+            else:
+                a, e = result
                 if not e and a:
-                    reco[an] = a
+                    reco[ai_name] = a
                 elif e:
-                    errors.append(f"Recommendation {an}: {e}")
-            except asyncio.TimeoutError:
-                errors.append(f"Recommendation {an}: timeout")
+                    errors.append(f"Recommendation {ai_name}: {e}")
         step += 2
 
         # Phase 4: Summary
@@ -725,18 +788,18 @@ async def analyze(body: AnalyzeReq):
             "ai_scores": aiavg,
         }
 
-        # Phase 5: Qualitative comment
+        # Phase 5: Qualitative comment (with timeout + retry)
         yield sse("progress", {
             "step": step, "total": total, "phase": "comment",
             "msg": "Generazione analisi qualitativa...",
         })
-        try:
-            comment = await asyncio.wait_for(
-                asyncio.to_thread(gen_comment, bn, sector, summ, {str(k): v for k, v in ev_res.items()}),
-                timeout=30,
-            )
-        except asyncio.TimeoutError:
+        comment, cerr = await _safe_call(
+            gen_comment, bn, sector, summ, {str(k): v for k, v in ev_res.items()},
+            timeout=AI_CALL_TIMEOUT,
+        )
+        if cerr or not comment:
             comment = "Analisi non disponibile."
+            print(f"[COMMENT] Fallback: {cerr}", flush=True)
 
         if errors:
             print(f"[ANALYSIS] All errors: {errors}", flush=True)
