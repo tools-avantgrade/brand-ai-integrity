@@ -237,6 +237,24 @@ def eval_batch(question, ai_answers, user_answer, retry=False):
                     x["reason"] = x["reason"].replace("\n", " ").strip()
                 x.setdefault("key_conflicts", [])
                 res[n] = x
+
+        # Sanity check: catch evaluator hallucinations with text matching
+        user_elements = [e.strip().lower() for e in user_answer.replace(",", " ").split() if len(e.strip()) > 2]
+        if user_elements:
+            for n in list(res.keys()):
+                if n not in ai_answers:
+                    continue
+                ai_lower = ai_answers[n].lower()
+                matches = sum(1 for e in user_elements if e in ai_lower)
+                match_ratio = matches / len(user_elements)
+                llm_score = res[n]["score"]
+                if llm_score < 0.25 and match_ratio >= 0.5:
+                    corrected = round(match_ratio * 0.85, 2)
+                    print(f"[SANITY] {n}: LLM gave {llm_score} but text match={matches}/{len(user_elements)} ({match_ratio:.0%}), correcting to {corrected}", flush=True)
+                    res[n]["score"] = corrected
+                    res[n]["is_correct"] = corrected >= 0.75
+                    res[n]["reason"] = f"[Corretto: {matches}/{len(user_elements)} elementi trovati nel testo] " + res[n].get("reason", "")
+
         return res, None
     except json.JSONDecodeError:
         if not retry:
