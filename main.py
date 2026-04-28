@@ -251,10 +251,18 @@ def eval_batch(question, ai_answers, user_answer, retry=False):
                 if llm_score < 0.25 and matches > 0:
                     corrected = round(match_ratio * 0.85, 2)
                     if corrected > llm_score:
+                        found = [e.upper() for e in user_elements if e in ai_lower]
+                        missing = [e.upper() for e in user_elements if e not in ai_lower]
+                        parts = []
+                        if found:
+                            parts.append(f"{', '.join(found)} {'è presente' if len(found) == 1 else 'sono presenti'}")
+                        if missing:
+                            parts.append(f"{', '.join(missing)} {'è assente' if len(missing) == 1 else 'sono assenti'}")
+                        reason = f"{matches}/{len(user_elements)} elementi trovati. {', mentre '.join(parts)}."
                         print(f"[SANITY] {n}: LLM gave {llm_score} but text match={matches}/{len(user_elements)} ({match_ratio:.0%}), correcting to {corrected}", flush=True)
                         res[n]["score"] = corrected
                         res[n]["is_correct"] = corrected >= 0.75
-                        res[n]["reason"] = f"[Corretto: {matches}/{len(user_elements)} elementi trovati nel testo] " + res[n].get("reason", "")
+                        res[n]["reason"] = reason
 
         return res, None
     except json.JSONDecodeError:
