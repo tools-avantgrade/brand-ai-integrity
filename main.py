@@ -25,9 +25,10 @@ from pydantic import BaseModel
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
+from zoneinfo import ZoneInfo
 
 import base64
 import urllib.request
@@ -402,26 +403,44 @@ def _judge(s):
     return "SCARSO"
 
 
+def _pdf_page_footer(canvas, doc):
+    canvas.saveState()
+    canvas.setFont("Helvetica", 8)
+    canvas.setFillColor(colors.HexColor("#999999"))
+    canvas.drawCentredString(A4[0] / 2, 18, f"Pag. {doc.page}")
+    canvas.restoreState()
+
+
 def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, comment):
     buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=30)
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=40)
     st = getSampleStyleSheet()
     ts = ParagraphStyle("T", parent=st["Heading1"], fontSize=26, textColor=colors.HexColor("#E87722"),
-                        spaceAfter=10, alignment=TA_CENTER, fontName="Helvetica-Bold")
+                        spaceAfter=6, alignment=TA_CENTER, fontName="Helvetica-Bold")
     ss = ParagraphStyle("S", parent=st["Normal"], fontSize=13, textColor=colors.HexColor("#666"),
-                        spaceAfter=20, alignment=TA_CENTER)
+                        spaceAfter=10, alignment=TA_CENTER)
     hs = ParagraphStyle("H", parent=st["Heading2"], fontSize=17, textColor=colors.HexColor("#E87722"),
-                        spaceAfter=14, fontName="Helvetica-Bold")
+                        spaceBefore=18, spaceAfter=14, fontName="Helvetica-Bold")
     shs = ParagraphStyle("SH", parent=st["Heading3"], fontSize=13, textColor=colors.HexColor("#333"),
-                         spaceAfter=10, fontName="Helvetica-Bold")
-    bs = ParagraphStyle("BX", parent=st["Normal"], fontSize=9, leading=13)
-    ns = st["Normal"]
+                         spaceBefore=14, spaceAfter=10, fontName="Helvetica-Bold")
+    bs = ParagraphStyle("BX", parent=st["Normal"], fontSize=9, leading=14, spaceAfter=4)
+    ns = ParagraphStyle("NS", parent=st["Normal"], fontSize=10, leading=15, spaceAfter=6)
+
+    italy_tz = ZoneInfo("Europe/Rome")
+    now_it = datetime.now(italy_tz)
 
     story = []
-    story.append(Spacer(1, 0.4 * inch))
+
+    import os
+    logo_path = os.path.join(os.path.dirname(__file__), "logo-avantgrade.png")
+    if os.path.exists(logo_path):
+        story.append(Image(logo_path, width=2.2 * inch, height=0.55 * inch))
+        story.append(Spacer(1, 0.25 * inch))
+
     story.append(Paragraph("BRAND AI INTEGRITY REPORT", ts))
+    story.append(Spacer(1, 0.1 * inch))
     story.append(Paragraph(f"Brand: {bn} | Settore: {sector}", ss))
-    story.append(Paragraph(f"Data: {datetime.now().strftime('%d/%m/%Y - %H:%M')}", ss))
+    story.append(Paragraph(f"Data: {now_it.strftime('%d/%m/%Y - %H:%M')}", ss))
     story.append(Spacer(1, 0.4 * inch))
     story.append(Paragraph("EXECUTIVE SUMMARY", hs))
 
@@ -461,15 +480,16 @@ def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, 
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(t)
-    story.append(Spacer(1, 0.3 * inch))
+    story.append(Spacer(1, 0.4 * inch))
 
     if comment:
         story.append(Paragraph("ANALISI QUALITATIVA", hs))
         story.append(Paragraph(comment, ns))
-        story.append(Spacer(1, 0.3 * inch))
+        story.append(Spacer(1, 0.4 * inch))
 
     story.append(PageBreak())
     story.append(Paragraph("ANALISI DETTAGLIATA", hs))
+    story.append(Spacer(1, 0.15 * inch))
 
     for idx_s in sorted(eval_results.keys(), key=lambda x: int(x)):
         idx = int(idx_s)
@@ -493,7 +513,7 @@ def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, 
             ("GRID", (0, 0), (-1, -1), 1, colors.white),
         ]))
         story.append(stt)
-        story.append(Spacer(1, 0.1 * inch))
+        story.append(Spacer(1, 0.15 * inch))
 
         ua = str(user_answers.get(str(idx), user_answers.get(idx, "N/A")))
         story.append(Paragraph("<b>Ground Truth:</b>", ns))
@@ -508,7 +528,7 @@ def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, 
             ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
         ]))
         story.append(gt)
-        story.append(Spacer(1, 0.15 * inch))
+        story.append(Spacer(1, 0.2 * inch))
 
         aa = ai_answers.get(str(idx), ai_answers.get(idx, {}))
         if isinstance(aa, dict):
@@ -531,28 +551,33 @@ def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, 
                     ]))
                     story.append(at)
                     story.append(Paragraph(f"<i>{ar.get('reason', '')}</i>", ns))
-                    story.append(Spacer(1, 0.1 * inch))
-        story.append(Spacer(1, 0.3 * inch))
+                    story.append(Spacer(1, 0.15 * inch))
+        story.append(Spacer(1, 0.35 * inch))
 
     if reco:
         story.append(PageBreak())
         story.append(Paragraph("CHI CONSIGLIANO LE AI?", hs))
+        story.append(Spacer(1, 0.1 * inch))
         story.append(Paragraph(f'Domanda: "Nel settore {sector}, quale brand consiglieresti?"', ns))
-        story.append(Spacer(1, 0.15 * inch))
+        story.append(Spacer(1, 0.2 * inch))
         for an, al in [("gemini", "Gemini"), ("openai", "ChatGPT")]:
             if an in reco:
                 story.append(Paragraph(f"<b>{al}:</b>", ns))
                 story.append(Paragraph(reco[an], bs))
-                story.append(Spacer(1, 0.15 * inch))
+                story.append(Spacer(1, 0.2 * inch))
 
     story.append(PageBreak())
     story.append(Spacer(1, 1 * inch))
     story.append(Paragraph("Report generato da Brand AI Integrity", ns))
     story.append(Paragraph("Sviluppato dal <b>Team Innovation di AvantGrade.com</b>", ns))
     story.append(Spacer(1, 0.5 * inch))
+
+    cta_title = ParagraphStyle("CTAT", parent=ns, fontSize=13, textColor=colors.HexColor("#333"),
+                               alignment=TA_CENTER, fontName="Helvetica-Bold", spaceAfter=8)
     ctas = ParagraphStyle("CTA", parent=ns, fontSize=12, textColor=colors.white,
                           alignment=TA_CENTER, fontName="Helvetica-Bold")
-    cta_link = '<link href="https://www.avantgrade.com/geo#contattaci" color="white">Vuoi migliorare? Parliamone insieme</link>'
+    story.append(Paragraph("Vuoi essere la risposta dell'AI nel tuo settore?", cta_title))
+    cta_link = '<link href="https://www.avantgrade.com/geo#contattaci" color="white">Contattaci adesso</link>'
     ct = Table([[Paragraph(cta_link, ctas)]], colWidths=[5 * inch])
     ct.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#E87722")),
@@ -563,7 +588,7 @@ def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, 
         ("RIGHTPADDING", (0, 0), (-1, -1), 20),
     ]))
     story.append(ct)
-    doc.build(story)
+    doc.build(story, onFirstPage=_pdf_page_footer, onLaterPages=_pdf_page_footer)
     buf.seek(0)
     return buf
 
@@ -643,10 +668,12 @@ def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment="",
         f'In allegato trovi il <b>report PDF completo</b> con il dettaglio di ogni domanda, '
         f'le risposte di ciascuna AI e i suggerimenti per migliorare il tuo score.</p>'
         f'<hr style="border:1px solid #eee;margin:24px 0;">'
-        f'<p style="text-align:center;margin:24px 0 8px;">'
+        f'<p style="text-align:center;margin:24px 0 4px;font-size:16px;font-weight:bold;color:#333;">'
+        f'Vuoi essere la risposta dell\'AI nel tuo settore?</p>'
+        f'<p style="text-align:center;margin:0 0 8px;">'
         f'<a href="https://www.avantgrade.com/geo#contattaci" '
         f'style="background:#E87722;color:white;padding:14px 36px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:15px;display:inline-block;">'
-        f'Vuoi migliorare il tuo Score? Parliamone</a></p>'
+        f'Contattaci adesso</a></p>'
         f'<p style="text-align:center;font-size:12px;color:#999;margin-top:20px;">'
         f'Report generato da Brand AI Integrity &mdash; Team Innovation di AvantGrade.com</p>'
         f'</div></body></html>'
