@@ -684,7 +684,7 @@ def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment="",
         return False, str(e)
 
 
-def send_lead_notification(nome, cognome, azienda, email, bn, sector, summary, qualitative_comment):
+def send_lead_notification(nome, cognome, azienda, email, bn, sector, summary, qualitative_comment, pdf_buf=None):
     api_key = env("SMTP2GO_API_KEY")
     sender = env("SMTP2GO_SENDER", "noreply@avantgrade.com")
     if not api_key:
@@ -765,13 +765,24 @@ def send_lead_notification(nome, cognome, azienda, email, bn, sector, summary, q
     )
 
     try:
-        payload = json.dumps({
+        email_payload = {
             "api_key": api_key,
             "to": ["brand-integrity-leads@avantgrade.com"],
             "sender": sender,
             "subject": f"Nuovo Lead: {nome} {cognome} ({azienda}) - {bn}",
             "html_body": html_body,
-        }).encode("utf-8")
+        }
+
+        if pdf_buf:
+            pdf_buf.seek(0)
+            pdf_b64 = base64.b64encode(pdf_buf.read()).decode("utf-8")
+            email_payload["attachments"] = [{
+                "filename": f"Brand_AI_Integrity_{bn}.pdf",
+                "fileblob": pdf_b64,
+                "mimetype": "application/pdf",
+            }]
+
+        payload = json.dumps(email_payload).encode("utf-8")
 
         req = urllib.request.Request(
             "https://api.smtp2go.com/v3/email/send",
@@ -1117,9 +1128,10 @@ async def email_route(b: EmailReq):
     ok, msg = send_email(b.email, b.brand_name, pdf, b.sector, b.summary, b.qualitative_comment, nome=b.nome)
     print(f"[EMAIL] to={b.email} brand={b.brand_name} nome={b.nome} cognome={b.cognome} azienda={b.azienda} success={ok} msg={msg}")
 
+    pdf.seek(0)
     lok, lmsg = send_lead_notification(
         b.nome, b.cognome, b.azienda, b.email,
-        b.brand_name, b.sector, b.summary, b.qualitative_comment,
+        b.brand_name, b.sector, b.summary, b.qualitative_comment, pdf_buf=pdf,
     )
     print(f"[LEAD-NOTIFY] brand={b.brand_name} lead={b.nome} {b.cognome} success={lok} msg={lmsg}")
 
