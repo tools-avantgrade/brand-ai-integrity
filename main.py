@@ -1182,6 +1182,43 @@ async def email_route(b: EmailReq):
     zok, zmsg = create_zoho_lead(b.nome, b.cognome, b.azienda, b.email, b.brand_name, b.sector, score)
     print(f"[ZOHO-CRM] brand={b.brand_name} lead={b.email} success={zok} msg={zmsg}")
 
+    try:
+        debug_api_key = env("SMTP2GO_API_KEY")
+        debug_sender = env("SMTP2GO_SENDER", "noreply@avantgrade.com")
+        if debug_api_key:
+            debug_html = (
+                f"<html><body style='font-family:monospace;font-size:13px;'>"
+                f"<h3>Zoho CRM Debug Log</h3>"
+                f"<p><b>Lead:</b> {b.nome} {b.cognome} ({b.azienda}) - {b.email}</p>"
+                f"<p><b>Brand:</b> {b.brand_name} | Score: {score}</p>"
+                f"<p><b>Zoho result:</b> success={zok}</p>"
+                f"<p><b>Zoho message:</b> {zmsg}</p>"
+                f"<hr>"
+                f"<p><b>Email lead:</b> success={ok} | msg={msg}</p>"
+                f"<p><b>Email notify:</b> success={lok} | msg={lmsg}</p>"
+                f"<hr>"
+                f"<p><b>ENV check:</b> ZOHO_CLIENT_ID={'SET' if env('ZOHO_CLIENT_ID') else 'MISSING'} | "
+                f"ZOHO_CLIENT_SECRET={'SET' if env('ZOHO_CLIENT_SECRET') else 'MISSING'} | "
+                f"ZOHO_REFRESH_TOKEN={'SET' if env('ZOHO_REFRESH_TOKEN') else 'MISSING'}</p>"
+                f"</body></html>"
+            )
+            debug_payload = json.dumps({
+                "api_key": debug_api_key,
+                "to": ["damo@avantgrade.com"],
+                "sender": debug_sender,
+                "subject": f"[DEBUG] Zoho CRM - {b.brand_name} - {'OK' if zok else 'FAIL'}",
+                "html_body": debug_html,
+            }).encode("utf-8")
+            debug_req = urllib.request.Request(
+                "https://api.smtp2go.com/v3/email/send",
+                data=debug_payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(debug_req, timeout=10)
+    except Exception:
+        pass
+
     return {"success": ok, "message": msg}
 
 
