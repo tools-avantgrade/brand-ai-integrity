@@ -448,7 +448,7 @@ def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, 
     ai_sc = summary.get("ai_scores", {})
     data = [
         ["METRICA", "VALORE", "VALUTAZIONE"],
-        ["Brand AI Integrity Score", f"{sc}/100", _judge(sc)],
+        ["Brand AI Integrity", f"{sc}/100", _judge(sc)],
         ["", "", ""],
         ["Score Gemini", f"{ai_sc.get('gemini', 0)}/100", _judge(ai_sc.get("gemini", 0))],
         ["Score ChatGPT", f"{ai_sc.get('openai', 0)}/100", _judge(ai_sc.get("openai", 0))],
@@ -645,7 +645,7 @@ def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment="",
         f'nel settore <b>{sector}</b>, confrontando le risposte delle AI con le informazioni reali '
         f'su <b>{total} domande chiave</b>: prodotti, target, sedi, canali social e sito web.</p>'
         f'<div style="background:{score_color};border-radius:12px;padding:24px;text-align:center;margin:24px 0;">'
-        f'<p style="color:rgba(255,255,255,.85);margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:1px;">Brand AI Integrity Score</p>'
+        f'<p style="color:rgba(255,255,255,.85);margin:0 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:1px;">Brand AI Integrity</p>'
         f'<p style="color:white;margin:0;font-size:48px;font-weight:bold;">{score}<span style="font-size:20px;opacity:.7">/100</span></p>'
         f'<p style="color:white;margin:6px 0 0;font-size:15px;font-weight:bold;">{score_label}</p></div>'
         f'<p style="font-size:14px;line-height:1.7;color:#444;">{score_msg}</p>'
@@ -859,7 +859,7 @@ def create_zoho_lead(nome, cognome, azienda, email, bn, sector, score):
                 "Company": azienda or "(non specificata)",
                 "Email": email,
                 "Lead_Source": "Brand Integrity",
-                "Description": f"Brand analizzato: {bn}\nSettore: {sector}\nBrand AI Integrity Score: {score}/100",
+                "Description": f"Brand analizzato: {bn}\nSettore: {sector}\nBrand AI Integrity: {score}/100",
             }]
         }
 
