@@ -31,6 +31,7 @@ from reportlab.lib.units import inch
 
 import base64
 import urllib.request
+import urllib.parse
 
 load_dotenv()
 
@@ -570,7 +571,7 @@ def make_pdf(bn, sector, summary, eval_results, user_answers, ai_answers, reco, 
 # ============================================================
 # EMAIL
 # ============================================================
-def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment=""):
+def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment="", nome=""):
     api_key = env("SMTP2GO_API_KEY")
     sender = env("SMTP2GO_SENDER", "noreply@avantgrade.com")
     if not api_key:
@@ -594,6 +595,8 @@ def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment="")
         score_color, score_label = "#F44336", "DA MIGLIORARE"
         score_msg = f"Le AI non rappresentano correttamente <b>{bn}</b>: &egrave; il momento di intervenire."
 
+    greeting = f"Ciao <b>{nome}</b>," if nome else "Ciao,"
+
     comment_html = ""
     if qualitative_comment:
         short = qualitative_comment[:300]
@@ -611,6 +614,7 @@ def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment="")
         f'<h1 style="color:white;margin:0;font-size:24px;">Brand AI Integrity Report</h1>'
         f'<p style="color:rgba(255,255,255,.9);margin:10px 0 0;font-size:16px;">{bn} &mdash; {sector}</p></div>'
         f'<div style="padding:30px;background:#f9f9f9;">'
+        f'<p style="font-size:15px;line-height:1.7;color:#444;">{greeting}</p>'
         f'<p style="font-size:15px;line-height:1.7;color:#444;">'
         f'Abbiamo analizzato come <b>Gemini</b> e <b>ChatGPT</b> rappresentano <b>{bn}</b> '
         f'nel settore <b>{sector}</b>, confrontando le risposte delle AI con le informazioni reali '
@@ -674,6 +678,167 @@ def send_email(to, bn, pdf_buf, sector="", summary=None, qualitative_comment="")
         with urllib.request.urlopen(req, timeout=15) as resp:
             result = json.loads(resp.read().decode("utf-8"))
             if result.get("data", {}).get("succeeded", 0) > 0:
+                return True, "OK"
+            return False, json.dumps(result)
+    except Exception as e:
+        return False, str(e)
+
+
+def send_lead_notification(nome, cognome, azienda, email, bn, sector, summary, qualitative_comment):
+    api_key = env("SMTP2GO_API_KEY")
+    sender = env("SMTP2GO_SENDER", "noreply@avantgrade.com")
+    if not api_key:
+        return False, "SMTP2GO_API_KEY non configurata"
+
+    score = summary.get("integrity_score", 0) if summary else 0
+    gs = summary.get("ai_scores", {}).get("gemini", 0) if summary else 0
+    cs = summary.get("ai_scores", {}).get("openai", 0) if summary else 0
+    correct = summary.get("correct", 0) if summary else 0
+    partial = summary.get("partial", 0) if summary else 0
+    total = summary.get("total", 0) if summary else 0
+    incorrect = summary.get("incorrect", 0) if summary else 0
+
+    if score >= 80:
+        score_color, score_label = "#4CAF50", "ECCELLENTE"
+    elif score >= 60:
+        score_color, score_label = "#FF9800", "BUONO"
+    else:
+        score_color, score_label = "#F44336", "DA MIGLIORARE"
+
+    comment_snippet = ""
+    if qualitative_comment:
+        short = qualitative_comment[:400]
+        if len(qualitative_comment) > 400:
+            short += "..."
+        comment_snippet = (
+            f'<div style="background:#fff;border-left:4px solid #E87722;padding:14px 18px;margin:16px 0;border-radius:0 8px 8px 0;">'
+            f'<p style="font-size:12px;color:#888;margin:0 0 6px;font-weight:bold;text-transform:uppercase;">Analisi qualitativa</p>'
+            f'<p style="font-size:13px;color:#444;margin:0;line-height:1.6;">{short}</p></div>'
+        )
+
+    html_body = (
+        f'<html><body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:0 auto;background:#f4f4f4;">'
+        f'<div style="background:linear-gradient(135deg,#1a1a2e,#16213e);padding:30px;text-align:center;border-radius:10px 10px 0 0;">'
+        f'<h1 style="color:#E87722;margin:0;font-size:22px;">Nuovo Lead - Brand AI Integrity</h1>'
+        f'<p style="color:rgba(255,255,255,.7);margin:8px 0 0;font-size:14px;">Qualcuno ha appena completato l\'analisi</p></div>'
+        f'<div style="padding:28px;background:#f9f9f9;">'
+        f'<h3 style="color:#333;margin:0 0 16px;font-size:16px;">Dati del contatto</h3>'
+        f'<table style="width:100%;border-collapse:collapse;margin-bottom:24px;">'
+        f'<tr><td style="padding:10px 14px;background:#fff;border:1px solid #eee;font-weight:bold;color:#666;width:120px;">Nome</td>'
+        f'<td style="padding:10px 14px;background:#fff;border:1px solid #eee;color:#333;">{nome} {cognome}</td></tr>'
+        f'<tr><td style="padding:10px 14px;background:#fff;border:1px solid #eee;font-weight:bold;color:#666;">Azienda</td>'
+        f'<td style="padding:10px 14px;background:#fff;border:1px solid #eee;color:#333;">{azienda}</td></tr>'
+        f'<tr><td style="padding:10px 14px;background:#fff;border:1px solid #eee;font-weight:bold;color:#666;">Email</td>'
+        f'<td style="padding:10px 14px;background:#fff;border:1px solid #eee;color:#333;"><a href="mailto:{email}" style="color:#E87722;">{email}</a></td></tr>'
+        f'</table>'
+        f'<h3 style="color:#333;margin:0 0 16px;font-size:16px;">Brand analizzato</h3>'
+        f'<table style="width:100%;border-collapse:collapse;margin-bottom:24px;">'
+        f'<tr><td style="padding:10px 14px;background:#fff;border:1px solid #eee;font-weight:bold;color:#666;width:120px;">Brand</td>'
+        f'<td style="padding:10px 14px;background:#fff;border:1px solid #eee;color:#333;">{bn}</td></tr>'
+        f'<tr><td style="padding:10px 14px;background:#fff;border:1px solid #eee;font-weight:bold;color:#666;">Settore</td>'
+        f'<td style="padding:10px 14px;background:#fff;border:1px solid #eee;color:#333;">{sector}</td></tr>'
+        f'</table>'
+        f'<h3 style="color:#333;margin:0 0 12px;font-size:16px;">Risultato analisi</h3>'
+        f'<div style="background:{score_color};border-radius:10px;padding:20px;text-align:center;margin-bottom:16px;">'
+        f'<p style="color:rgba(255,255,255,.85);margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:1px;">Score</p>'
+        f'<p style="color:white;margin:0;font-size:40px;font-weight:bold;">{score}<span style="font-size:18px;opacity:.7">/100</span></p>'
+        f'<p style="color:white;margin:4px 0 0;font-size:14px;font-weight:bold;">{score_label}</p></div>'
+        f'<table style="width:100%;border-collapse:collapse;margin-bottom:16px;">'
+        f'<tr>'
+        f'<td style="background:#fff;border:1px solid #eee;border-radius:8px;padding:14px;text-align:center;width:48%;">'
+        f'<p style="margin:0 0 4px;font-size:11px;color:#888;">GEMINI</p>'
+        f'<p style="margin:0;font-size:24px;font-weight:bold;color:{_cscore(gs)};">{gs}/100</p></td>'
+        f'<td style="width:4%;"></td>'
+        f'<td style="background:#fff;border:1px solid #eee;border-radius:8px;padding:14px;text-align:center;width:48%;">'
+        f'<p style="margin:0 0 4px;font-size:11px;color:#888;">CHATGPT</p>'
+        f'<p style="margin:0;font-size:24px;font-weight:bold;color:{_cscore(cs)};">{cs}/100</p></td>'
+        f'</tr></table>'
+        f'<p style="font-size:13px;color:#666;line-height:1.5;">'
+        f'Su {total} domande: <b style="color:#4CAF50;">{correct} corrette</b>'
+        f'{f", <b style=&quot;color:#FF9800;&quot;>{partial} parziali</b>" if partial else ""}'
+        f'{f", <b style=&quot;color:#F44336;&quot;>{incorrect} da migliorare</b>" if incorrect else ""}.</p>'
+        f'{comment_snippet}'
+        f'<hr style="border:1px solid #eee;margin:20px 0;">'
+        f'<p style="text-align:center;font-size:11px;color:#999;">'
+        f'Notifica automatica &mdash; Brand AI Integrity &mdash; AvantGrade.com</p>'
+        f'</div></body></html>'
+    )
+
+    try:
+        payload = json.dumps({
+            "api_key": api_key,
+            "to": ["brand-integrity-leads@avantgrade.com"],
+            "sender": sender,
+            "subject": f"Nuovo Lead: {nome} {cognome} ({azienda}) - {bn}",
+            "html_body": html_body,
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "https://api.smtp2go.com/v3/email/send",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            if result.get("data", {}).get("succeeded", 0) > 0:
+                return True, "OK"
+            return False, json.dumps(result)
+    except Exception as e:
+        return False, str(e)
+
+
+# ============================================================
+# ZOHO CRM
+# ============================================================
+def _zoho_access_token():
+    cid = env("ZOHO_CLIENT_ID")
+    csec = env("ZOHO_CLIENT_SECRET")
+    rtok = env("ZOHO_REFRESH_TOKEN")
+    if not all([cid, csec, rtok]):
+        return None
+    data = urllib.parse.urlencode({
+        "grant_type": "refresh_token",
+        "client_id": cid,
+        "client_secret": csec,
+        "refresh_token": rtok,
+    }).encode("utf-8")
+    req = urllib.request.Request("https://accounts.zoho.com/oauth/v2/token", data=data, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8")).get("access_token")
+
+
+def create_zoho_lead(nome, cognome, azienda, email, bn, sector, score):
+    try:
+        token = _zoho_access_token()
+        if not token:
+            return False, "Zoho credentials not configured"
+
+        lead_data = {
+            "data": [{
+                "First_Name": nome,
+                "Last_Name": cognome or "(non specificato)",
+                "Company": azienda or "(non specificata)",
+                "Email": email,
+                "Lead_Source": "Brand Integrity",
+                "Description": f"Brand analizzato: {bn}\nSettore: {sector}\nBrand AI Integrity Score: {score}/100",
+            }]
+        }
+
+        payload = json.dumps(lead_data).encode("utf-8")
+        req = urllib.request.Request(
+            "https://www.zohoapis.com/crm/v2/Leads",
+            data=payload,
+            headers={
+                "Authorization": f"Zoho-oauthtoken {token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            status = result.get("data", [{}])[0].get("status")
+            if status == "success":
                 return True, "OK"
             return False, json.dumps(result)
     except Exception as e:
@@ -930,6 +1095,9 @@ async def analyze(body: AnalyzeReq):
 
 class EmailReq(BaseModel):
     email: str
+    nome: str = ""
+    cognome: str = ""
+    azienda: str = ""
     brand_name: str
     sector: str
     summary: dict
@@ -946,8 +1114,19 @@ async def email_route(b: EmailReq):
         b.brand_name, b.sector, b.summary, b.eval_results,
         b.user_answers, b.ai_answers, b.recommendation, b.qualitative_comment,
     )
-    ok, msg = send_email(b.email, b.brand_name, pdf, b.sector, b.summary, b.qualitative_comment)
-    print(f"[EMAIL] to={b.email} brand={b.brand_name} success={ok} msg={msg}")
+    ok, msg = send_email(b.email, b.brand_name, pdf, b.sector, b.summary, b.qualitative_comment, nome=b.nome)
+    print(f"[EMAIL] to={b.email} brand={b.brand_name} nome={b.nome} cognome={b.cognome} azienda={b.azienda} success={ok} msg={msg}")
+
+    lok, lmsg = send_lead_notification(
+        b.nome, b.cognome, b.azienda, b.email,
+        b.brand_name, b.sector, b.summary, b.qualitative_comment,
+    )
+    print(f"[LEAD-NOTIFY] brand={b.brand_name} lead={b.nome} {b.cognome} success={lok} msg={lmsg}")
+
+    score = b.summary.get("integrity_score", 0) if b.summary else 0
+    zok, zmsg = create_zoho_lead(b.nome, b.cognome, b.azienda, b.email, b.brand_name, b.sector, score)
+    print(f"[ZOHO-CRM] brand={b.brand_name} lead={b.email} success={zok} msg={zmsg}")
+
     return {"success": ok, "message": msg}
 
 
