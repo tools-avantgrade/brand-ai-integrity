@@ -834,33 +834,23 @@ def _zoho_access_token():
     csec = env("ZOHO_CLIENT_SECRET")
     rtok = env("ZOHO_REFRESH_TOKEN")
     if not all([cid, csec, rtok]):
-        print(f"[ZOHO] Missing credentials: client_id={'yes' if cid else 'NO'} client_secret={'yes' if csec else 'NO'} refresh_token={'yes' if rtok else 'NO'}", flush=True)
         return None
-    try:
-        data = urllib.parse.urlencode({
-            "grant_type": "refresh_token",
-            "client_id": cid,
-            "client_secret": csec,
-            "refresh_token": rtok,
-        }).encode("utf-8")
-        req = urllib.request.Request("https://accounts.zoho.com/oauth/v2/token", data=data, method="POST")
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-            token = body.get("access_token")
-            if not token:
-                print(f"[ZOHO] Token refresh failed: {json.dumps(body)}", flush=True)
-            return token
-    except Exception as e:
-        print(f"[ZOHO] Token refresh exception: {e}", flush=True)
-        return None
+    data = urllib.parse.urlencode({
+        "grant_type": "refresh_token",
+        "client_id": cid,
+        "client_secret": csec,
+        "refresh_token": rtok,
+    }).encode("utf-8")
+    req = urllib.request.Request("https://accounts.zoho.com/oauth/v2/token", data=data, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8")).get("access_token")
 
 
 def create_zoho_lead(nome, cognome, azienda, email, bn, sector, score):
     try:
-        print(f"[ZOHO] Starting lead creation for {email}...", flush=True)
         token = _zoho_access_token()
         if not token:
-            return False, "Zoho credentials not configured or token refresh failed"
+            return False, "Zoho credentials not configured"
 
         lead_data = {
             "data": [{
@@ -885,17 +875,11 @@ def create_zoho_lead(nome, cognome, azienda, email, bn, sector, score):
         )
         with urllib.request.urlopen(req, timeout=15) as resp:
             result = json.loads(resp.read().decode("utf-8"))
-            print(f"[ZOHO] API response: {json.dumps(result)}", flush=True)
             status = result.get("data", [{}])[0].get("status")
             if status == "success":
                 return True, "OK"
             return False, json.dumps(result)
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8") if e.fp else ""
-        print(f"[ZOHO] HTTP {e.code}: {err_body}", flush=True)
-        return False, f"HTTP {e.code}: {err_body}"
     except Exception as e:
-        print(f"[ZOHO] Exception: {e}", flush=True)
         return False, str(e)
 
 
@@ -1181,43 +1165,6 @@ async def email_route(b: EmailReq):
     score = b.summary.get("integrity_score", 0) if b.summary else 0
     zok, zmsg = create_zoho_lead(b.nome, b.cognome, b.azienda, b.email, b.brand_name, b.sector, score)
     print(f"[ZOHO-CRM] brand={b.brand_name} lead={b.email} success={zok} msg={zmsg}")
-
-    try:
-        debug_api_key = env("SMTP2GO_API_KEY")
-        debug_sender = env("SMTP2GO_SENDER", "noreply@avantgrade.com")
-        if debug_api_key:
-            debug_html = (
-                f"<html><body style='font-family:monospace;font-size:13px;'>"
-                f"<h3>Zoho CRM Debug Log</h3>"
-                f"<p><b>Lead:</b> {b.nome} {b.cognome} ({b.azienda}) - {b.email}</p>"
-                f"<p><b>Brand:</b> {b.brand_name} | Score: {score}</p>"
-                f"<p><b>Zoho result:</b> success={zok}</p>"
-                f"<p><b>Zoho message:</b> {zmsg}</p>"
-                f"<hr>"
-                f"<p><b>Email lead:</b> success={ok} | msg={msg}</p>"
-                f"<p><b>Email notify:</b> success={lok} | msg={lmsg}</p>"
-                f"<hr>"
-                f"<p><b>ENV check:</b> ZOHO_CLIENT_ID={'SET' if env('ZOHO_CLIENT_ID') else 'MISSING'} | "
-                f"ZOHO_CLIENT_SECRET={'SET' if env('ZOHO_CLIENT_SECRET') else 'MISSING'} | "
-                f"ZOHO_REFRESH_TOKEN={'SET' if env('ZOHO_REFRESH_TOKEN') else 'MISSING'}</p>"
-                f"</body></html>"
-            )
-            debug_payload = json.dumps({
-                "api_key": debug_api_key,
-                "to": ["damo@avantgrade.com"],
-                "sender": debug_sender,
-                "subject": f"[DEBUG] Zoho CRM - {b.brand_name} - {'OK' if zok else 'FAIL'}",
-                "html_body": debug_html,
-            }).encode("utf-8")
-            debug_req = urllib.request.Request(
-                "https://api.smtp2go.com/v3/email/send",
-                data=debug_payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            urllib.request.urlopen(debug_req, timeout=10)
-    except Exception:
-        pass
 
     return {"success": ok, "message": msg}
 
