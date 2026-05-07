@@ -834,23 +834,33 @@ def _zoho_access_token():
     csec = env("ZOHO_CLIENT_SECRET")
     rtok = env("ZOHO_REFRESH_TOKEN")
     if not all([cid, csec, rtok]):
+        print(f"[ZOHO] Missing credentials: client_id={'yes' if cid else 'NO'} client_secret={'yes' if csec else 'NO'} refresh_token={'yes' if rtok else 'NO'}", flush=True)
         return None
-    data = urllib.parse.urlencode({
-        "grant_type": "refresh_token",
-        "client_id": cid,
-        "client_secret": csec,
-        "refresh_token": rtok,
-    }).encode("utf-8")
-    req = urllib.request.Request("https://accounts.zoho.com/oauth/v2/token", data=data, method="POST")
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read().decode("utf-8")).get("access_token")
+    try:
+        data = urllib.parse.urlencode({
+            "grant_type": "refresh_token",
+            "client_id": cid,
+            "client_secret": csec,
+            "refresh_token": rtok,
+        }).encode("utf-8")
+        req = urllib.request.Request("https://accounts.zoho.com/oauth/v2/token", data=data, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+            token = body.get("access_token")
+            if not token:
+                print(f"[ZOHO] Token refresh failed: {json.dumps(body)}", flush=True)
+            return token
+    except Exception as e:
+        print(f"[ZOHO] Token refresh exception: {e}", flush=True)
+        return None
 
 
 def create_zoho_lead(nome, cognome, azienda, email, bn, sector, score):
     try:
+        print(f"[ZOHO] Starting lead creation for {email}...", flush=True)
         token = _zoho_access_token()
         if not token:
-            return False, "Zoho credentials not configured"
+            return False, "Zoho credentials not configured or token refresh failed"
 
         lead_data = {
             "data": [{
@@ -875,11 +885,17 @@ def create_zoho_lead(nome, cognome, azienda, email, bn, sector, score):
         )
         with urllib.request.urlopen(req, timeout=15) as resp:
             result = json.loads(resp.read().decode("utf-8"))
+            print(f"[ZOHO] API response: {json.dumps(result)}", flush=True)
             status = result.get("data", [{}])[0].get("status")
             if status == "success":
                 return True, "OK"
             return False, json.dumps(result)
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8") if e.fp else ""
+        print(f"[ZOHO] HTTP {e.code}: {err_body}", flush=True)
+        return False, f"HTTP {e.code}: {err_body}"
     except Exception as e:
+        print(f"[ZOHO] Exception: {e}", flush=True)
         return False, str(e)
 
 
