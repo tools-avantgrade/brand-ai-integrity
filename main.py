@@ -95,6 +95,7 @@ def gen_gemini(bn, q):
                 temperature=0.2, top_p=0.8, top_k=40, max_output_tokens=8192,
                 thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
                 safety_settings=_safety(),
+                tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())],
             ),
         )
         if not r.candidates:
@@ -134,6 +135,7 @@ def gen_reco(sector, ai):
                     temperature=0.3, max_output_tokens=2048,
                     thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
                     safety_settings=_safety(),
+                    tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())],
                 ),
             )
             if r and r.text:
