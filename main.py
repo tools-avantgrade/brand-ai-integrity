@@ -922,47 +922,52 @@ async def analyze(body: AnalyzeReq):
         total = len(QUESTIONS) * 2 + len(QUESTIONS) + 3
         step = 0
 
-        # Phase 1: Gemini + ChatGPT in parallel per question (with timeout + keepalive)
+        # Phase 1: Gemini + ChatGPT — all questions in parallel (with keepalive)
+        yield sse("progress", {
+            "step": step, "total": total, "phase": "gemini",
+            "qn": 1, "qt": len(QUESTIONS),
+            "msg": f"Ricerca web in corso su {len(QUESTIONS)} domande...",
+        })
+
+        phase1_tasks = {}
         for idx, q in enumerate(QUESTIONS):
-            ai_ans[idx] = {}
             ap = q["ai_prompt"].replace("{BRAND_NAME}", bn)
-
-            yield sse("progress", {
-                "step": step, "total": total, "phase": "gemini",
-                "qn": idx + 1, "qt": len(QUESTIONS),
-                "msg": f"Domanda {idx + 1} di {len(QUESTIONS)}",
-            })
-
-            gather_task = asyncio.ensure_future(asyncio.gather(
+            task = asyncio.ensure_future(asyncio.gather(
                 _safe_call(gen_gemini, bn, ap),
                 _safe_call(gen_openai, bn, ap),
                 return_exceptions=True,
             ))
-            while not gather_task.done():
-                done, _ = await asyncio.wait({gather_task}, timeout=KEEPALIVE_INTERVAL)
-                if not done:
-                    yield ": keepalive\n\n"
-            results = gather_task.result()
+            phase1_tasks[task] = idx
 
-            for ai_name, r in [("gemini", results[0]), ("openai", results[1])]:
-                if isinstance(r, Exception):
-                    errors.append(f"{'Gemini' if ai_name == 'gemini' else 'ChatGPT'} Q{idx + 1}: {r}")
-                else:
-                    a, e = r
-                    if e:
-                        errors.append(f"{'Gemini' if ai_name == 'gemini' else 'ChatGPT'} Q{idx + 1}: {e}")
-                    elif a:
-                        ai_ans[idx][ai_name] = a
-            step += 2
-
-            yield sse("progress", {
-                "step": step, "total": total, "phase": "chatgpt",
-                "qn": idx + 1, "qt": len(QUESTIONS),
-                "msg": f"Domanda {idx + 1} di {len(QUESTIONS)}",
-            })
-
-            if idx < len(QUESTIONS) - 1:
-                await asyncio.sleep(0.5)
+        completed_q = 0
+        pending = set(phase1_tasks.keys())
+        while pending:
+            done, pending = await asyncio.wait(
+                pending, timeout=KEEPALIVE_INTERVAL,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if not done:
+                yield ": keepalive\n\n"
+                continue
+            for task in done:
+                idx = phase1_tasks[task]
+                results = task.result()
+                for ai_name, r in [("gemini", results[0]), ("openai", results[1])]:
+                    if isinstance(r, Exception):
+                        errors.append(f"{'Gemini' if ai_name == 'gemini' else 'ChatGPT'} Q{idx + 1}: {r}")
+                    else:
+                        a, e = r
+                        if e:
+                            errors.append(f"{'Gemini' if ai_name == 'gemini' else 'ChatGPT'} Q{idx + 1}: {e}")
+                        elif a:
+                            ai_ans[idx][ai_name] = a
+                completed_q += 1
+                step += 2
+                yield sse("progress", {
+                    "step": step, "total": total, "phase": "chatgpt",
+                    "qn": completed_q, "qt": len(QUESTIONS),
+                    "msg": f"Completata {completed_q} di {len(QUESTIONS)} domande",
+                })
 
         print(f"[ANALYSIS] Phase 1 done. AI answers: {[(k, list(v.keys())) for k, v in ai_ans.items()]}", flush=True)
         if errors:
