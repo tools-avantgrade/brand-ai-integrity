@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brand AI Integrity — AvantGrade</title>
+<link rel="icon" href="/static/favicon32x32.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0a0d14;--surface:rgba(18,22,33,.85);--surface2:rgba(25,30,45,.7);--border:rgba(232,119,34,.12);--border-hover:rgba(232,119,34,.35);--orange:#E87722;--orange-dark:#CF6610;--orange-light:#FF9800;--green:#4CAF50;--yellow:#FF9800;--red:#F44336;--gemini:#1565C0;--chatgpt:#2E7D32;--text:#e8e8f0;--text2:#9a9ab0;--text3:#666680;--radius:16px;--radius-sm:10px}
+html{scroll-behavior:smooth}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;line-height:1.6}
+body::before{content:'';position:fixed;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(ellipse at 30% 20%,rgba(232,119,34,.06) 0%,transparent 50%),radial-gradient(ellipse at 70% 80%,rgba(100,60,200,.04) 0%,transparent 50%);pointer-events:none;z-index:0}
+h1,h2,h3,h4{font-family:'Outfit',sans-serif;font-weight:700;letter-spacing:-.02em}
+.container{max-width:720px;margin:0 auto;padding:24px 20px;position:relative;z-index:1}
+@media(min-width:768px){.container{padding:40px 32px}}
+
+/* Logo AvantGrade — unico marchio presente */
+.brand-bar{display:flex;align-items:center;justify-content:center;padding:32px 24px 0;background:transparent;margin-bottom:0}
+.brand-bar img{object-fit:contain;display:block;filter:brightness(1) drop-shadow(0 2px 8px rgba(0,0,0,.3))}
+.logo-ag{height:110px;width:auto}
+
+.header{text-align:center;padding:16px 0 28px;animation:fadeIn .8s ease}
+.header .logo{font-family:'Outfit';font-size:clamp(1.9rem,4.5vw,2.5rem);font-weight:900;background:linear-gradient(135deg,var(--orange),var(--orange-light));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header p{color:white;font-size:clamp(1.4rem,3.5vw,1.9rem);margin-top:8px;font-family:'Outfit',sans-serif;font-weight:700}
+.header .sub{color:var(--text2);font-size:.95rem;margin-top:6px;font-family:'DM Sans';font-weight:400}
+.card{background:var(--surface);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:var(--radius);padding:32px;margin-bottom:24px;transition:border-color .3s,box-shadow .3s}
+.card:hover{border-color:var(--border-hover);box-shadow:0 8px 40px rgba(0,0,0,.3)}
+.card h2{font-size:1.25rem;margin-bottom:16px}
+.steps{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:40px}
+.step-dot{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Outfit';font-weight:700;font-size:.9rem;transition:all .4s ease;border:2px solid var(--border)}
+.step-dot.active{background:var(--orange);border-color:var(--orange);color:white;box-shadow:0 0 20px rgba(232,119,34,.4)}
+.step-dot.done{background:var(--green);border-color:var(--green);color:white}
+.step-dot.pending{color:var(--text3)}
+.step-line{width:60px;height:2px;background:var(--border);transition:background .4s}
+.step-line.done{background:var(--green)}
+.step-label{font-size:.75rem;color:var(--text3);text-align:center;margin-top:6px}
+.form-group{margin-bottom:24px}
+.form-group label{display:block;font-family:'Outfit';font-weight:600;font-size:1.15rem;color:var(--text);margin-bottom:8px}
+.form-group input[type="text"],.form-group input[type="email"],.form-group textarea{width:100%;padding:14px 18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:var(--radius-sm);color:var(--text);font-family:'DM Sans';font-size:.95rem;transition:border-color .3s,box-shadow .3s;outline:none;resize:vertical}
+.form-group input:focus,.form-group textarea:focus{border-color:var(--orange);box-shadow:0 0 0 3px rgba(232,119,34,.15)}
+.form-group textarea{min-height:100px}
+.form-group input::placeholder,.form-group textarea::placeholder{color:var(--text3)}
+.pills{display:flex;flex-wrap:wrap;gap:10px}
+.pill{padding:10px 18px;border-radius:50px;border:1.5px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);color:var(--text2);font-size:.88rem;font-weight:500;cursor:pointer;transition:all .25s ease;user-select:none}
+.pill:hover{border-color:rgba(232,119,34,.4);color:var(--text)}
+.pill.active{background:rgba(232,119,34,.15);border-color:var(--orange);color:var(--orange);font-weight:600}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:14px 32px;border-radius:var(--radius-sm);font-family:'Outfit';font-weight:700;font-size:1rem;border:none;cursor:pointer;transition:all .3s ease;text-decoration:none}
+.btn-primary{background:linear-gradient(135deg,var(--orange),var(--orange-light));color:white;box-shadow:0 4px 20px rgba(232,119,34,.3)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(232,119,34,.4)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-secondary{background:rgba(255,255,255,.06);color:var(--text);border:1px solid rgba(255,255,255,.1)}
+.btn-secondary:hover{background:rgba(255,255,255,.1)}
+.btn-full{width:100%}
+.loading-overlay{position:fixed;inset:0;background:rgba(10,13,20,.92);backdrop-filter:blur(10px);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1000;opacity:0;pointer-events:none;transition:opacity .4s ease}
+.loading-overlay.visible{opacity:1;pointer-events:all}
+.orb-container{position:relative;width:160px;height:160px;margin-bottom:40px;display:flex;align-items:center;justify-content:center}
+.orb-ring{position:absolute;top:0;left:0;width:160px;height:160px;transform:rotate(-90deg)}
+.orb-ring-bg{fill:none;stroke:rgba(255,255,255,.08);stroke-width:4}
+.orb-ring-fill{fill:none;stroke:url(#ringGrad);stroke-width:4;stroke-linecap:round;stroke-dasharray:439.8;stroke-dashoffset:439.8;transition:stroke-dashoffset .6s ease}
+.orb{width:120px;height:120px;border-radius:50%;background:radial-gradient(circle at 30% 30%,var(--orange-light),var(--orange),var(--orange-dark));box-shadow:0 0 60px rgba(232,119,34,.4),inset 0 0 30px rgba(255,255,255,.1);animation:orbPulse 2s ease-in-out infinite;position:relative;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.orb::after{content:'';position:absolute;top:10%;left:15%;width:30%;height:20%;border-radius:50%;background:radial-gradient(ellipse,rgba(255,255,255,.3),transparent);transform:rotate(-20deg)}
+.orb-pct{font-family:'Outfit';font-size:1.5rem;font-weight:900;color:white;text-shadow:0 2px 8px rgba(0,0,0,.4);line-height:1;position:relative;z-index:1}
+.orb-pct-sym{font-size:.9rem;font-weight:600;opacity:.85}
+@keyframes orbPulse{0%,100%{box-shadow:0 0 60px rgba(232,119,34,.4)}50%{box-shadow:0 0 80px rgba(232,119,34,.6)}}
+.loading-phase{font-family:'Outfit';font-size:1.15rem;font-weight:600;color:var(--text);text-align:center;min-height:30px;transition:opacity .3s}
+.loading-sub{font-size:.9rem;color:var(--text2);margin-top:8px;text-align:center;min-height:24px}
+.score-hero{text-align:center;padding:48px 24px;border-radius:20px;position:relative;overflow:hidden;margin-bottom:24px}
+.score-hero::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.08) 0%,transparent 60%);pointer-events:none}
+.score-hero .label{font-size:1rem;color:rgba(255,255,255,.8);font-weight:400;margin-bottom:8px}
+.score-hero .value{font-family:'Outfit';font-size:clamp(4rem,10vw,6rem);font-weight:900;color:white;text-shadow:0 4px 20px rgba(0,0,0,.3);line-height:1}
+.score-hero .suffix{font-size:.4em;font-weight:400;opacity:.7}
+.score-hero .judgment{font-size:1.3rem;font-weight:700;color:white;margin-top:8px}
+.ai-scores{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+.ai-score-card{text-align:center;padding:28px 16px;border-radius:var(--radius);position:relative;overflow:hidden;transition:transform .3s,box-shadow .3s}
+.ai-score-card:hover{transform:translateY(-4px);box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.ai-score-card.gemini-card{background:linear-gradient(135deg,var(--gemini),#1976D2);}
+.ai-score-card.chatgpt-card{background:linear-gradient(135deg,var(--chatgpt),#388E3C);}
+.ai-score-card .ai-name{font-size:.95rem;color:rgba(255,255,255,.9);font-weight:600;margin-bottom:8px}
+.ai-score-card .ai-value{font-family:'Outfit';font-size:2.8rem;font-weight:800;color:white}
+.detail-card{background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:12px;overflow:hidden;border:1px solid var(--border);transition:border-color .3s}
+.detail-card:hover{border-color:var(--border-hover)}
+.detail-header{padding:16px 20px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.detail-header .q-text{font-size:.9rem;font-weight:500;flex:1}
+.detail-header .status-badge{padding:4px 12px;border-radius:50px;font-size:.75rem;font-weight:700;white-space:nowrap}
+.detail-header .chevron{transition:transform .3s;color:var(--text3);font-size:1.2rem}
+.detail-card.open .chevron{transform:rotate(180deg)}
+.detail-body{max-height:0;overflow:hidden;transition:max-height .4s ease}
+.detail-card.open .detail-body{max-height:2000px}
+.detail-content{padding:0 20px 20px}
+.answer-block{background:rgba(255,255,255,.03);border-radius:8px;padding:14px;margin:8px 0;border-left:3px solid var(--border);font-size:.88rem;line-height:1.6;color:var(--text2)}
+.answer-block.ground-truth{border-left-color:var(--green);background:rgba(76,175,80,.06)}
+.answer-block.gemini-block{border-left-color:var(--gemini);background:rgba(21,101,192,.06)}
+.answer-block.chatgpt-block{border-left-color:var(--chatgpt);background:rgba(46,125,50,.06)}
+.msg-box{padding:20px;border-radius:var(--radius-sm);text-align:center;font-size:1.05rem;font-weight:500;margin:16px 0;animation:fadeIn .5s ease}
+.cta-section{background:linear-gradient(135deg,var(--orange) 0%,#F57C00 50%,var(--orange-light) 100%);background-size:200% 200%;animation:gradShift 6s ease infinite;padding:48px 32px;border-radius:20px;text-align:center;margin:32px 0;box-shadow:0 8px 40px rgba(232,119,34,.25)}
+.cta-section h2{color:white;font-size:1.4rem;margin-bottom:8px;line-height:1.4}
+.cta-section p{color:rgba(255,255,255,.9);font-size:1rem;margin-bottom:24px}
+.cta-section .btn-white{display:inline-block;background:white;color:var(--orange);font-weight:700;padding:14px 36px;border-radius:var(--radius-sm);text-decoration:none;transition:transform .2s,box-shadow .2s}
+.cta-section .btn-white:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.checkbox-row{display:flex;align-items:flex-start;gap:10px;margin:16px 0}
+.checkbox-row input[type="checkbox"]{width:18px;height:18px;accent-color:var(--orange);margin-top:2px;flex-shrink:0}
+.checkbox-row label{font-size:.85rem;color:var(--text2);cursor:pointer}
+.email-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px;margin-bottom:24px}
+.footer{text-align:center;padding:32px 0;color:var(--text3);font-size:.85rem}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+@keyframes gradShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+.anim-in{animation:fadeInUp .6s ease both}
+.anim-in-1{animation-delay:.1s}.anim-in-2{animation-delay:.2s}.anim-in-3{animation-delay:.3s}
+.anim-in-4{animation-delay:.4s}.anim-in-5{animation-delay:.5s}
+.hidden{display:none!important}
+.q-divider{height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.06),transparent);margin:8px 0 24px}
+</style>
+</head>
+<body>
+
+<!-- Logo AvantGrade -->
+<div class="brand-bar">
+<img class="logo-ag" src="/static/logo-avantgrade.png" alt="AvantGrade">
+</div>
+
+<div id="emailGate" class="hidden">
+  <div class="container" style="display:flex;align-items:center;justify-content:center;min-height:80vh">
+    <div class="card anim-in" style="text-align:center;padding:48px 40px;max-width:480px;width:100%">
+      <div style="font-size:3rem;margin-bottom:16px">🎯</div>
+      <h2 style="font-size:1.6rem;margin-bottom:12px">Il tuo report è pronto!</h2>
+      <p style="color:var(--text2);line-height:1.7;margin-bottom:32px">Inserisci i tuoi dati per visualizzare i risultati e ricevere il report in PDF.</p>
+      <div style="display:flex;gap:12px;text-align:left">
+        <div class="form-group" style="flex:1"><label>Nome</label><input type="text" id="gateNome" placeholder="Mario"></div>
+        <div class="form-group" style="flex:1"><label>Cognome</label><input type="text" id="gateCognome" placeholder="Rossi"></div>
+      </div>
+      <div class="form-group" style="text-align:left">
+        <label>Azienda</label>
+        <input type="text" id="gateAzienda" placeholder="La tua azienda">
+      </div>
+      <div class="form-group" style="text-align:left">
+        <label>Email</label>
+        <input type="email" id="gateEmail" placeholder="nome@azienda.com">
+      </div>
+      <!-- FIX SEC-04: casella NON pre-spuntata -->
+      <div class="checkbox-row" style="margin-bottom:24px">
+        <input type="checkbox" id="gatePrivacy">
+        <label for="gatePrivacy">Acconsento al trattamento dei dati personali ai sensi della <a href="https://www.avantgrade.com/privacy-policy" target="_blank" rel="noopener" style="color:var(--orange);text-decoration:underline">normativa vigente</a></label>
+      </div>
+      <button class="btn btn-primary btn-full" id="btnGate" disabled>Visualizza i Risultati &rarr;</button>
+      <div id="gateStatus" style="margin-top:12px;font-size:.9rem"></div>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="header">
+    <div class="logo">Brand AI Integrity</div>
+    <p>Quanto le AI conoscono davvero il tuo brand?</p>
+    <div class="sub">Ideato da AvantGrade.com</div>
+  </div>
+  <div class="steps">
+    <div><div class="step-dot active" id="dot1">1</div><div class="step-label">Brand</div></div>
+    <div class="step-line" id="line1"></div>
+    <div><div class="step-dot pending" id="dot2">2</div><div class="step-label">Domande</div></div>
+    <div class="step-line" id="line2"></div>
+    <div><div class="step-dot pending" id="dot3">3</div><div class="step-label">Risultati</div></div>
+  </div>
+
+  <div id="step1">
+    <div class="card anim-in"><h2>Come funziona?</h2>
+      <p style="color:var(--text2);line-height:1.7"><strong style="color:var(--orange)">Brand AI Integrity</strong> misura quanto le intelligenze artificiali conoscono davvero il tuo brand. In <strong>3 semplici passi</strong> &mdash; inserisci il nome del brand, rispondi a poche domande e scopri se <strong>Gemini</strong> e <strong>ChatGPT</strong> raccontano la verit&agrave; su di te.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px;font-size:.92rem">
+        <div style="display:flex;align-items:center;gap:10px"><span style="background:#F44336;color:white;font-weight:bold;padding:4px 12px;border-radius:6px;font-size:.85rem;white-space:nowrap;flex-shrink:0">0 &ndash; 40</span><span style="color:var(--text2)"><strong style="color:#F44336">Critico</strong> &mdash; Le AI sbagliano quasi tutto sul tuo brand.</span></div>
+        <div style="display:flex;align-items:center;gap:10px"><span style="background:#FF9800;color:white;font-weight:bold;padding:4px 12px;border-radius:6px;font-size:.85rem;white-space:nowrap;flex-shrink:0">40 &ndash; 70</span><span style="color:var(--text2)"><strong style="color:#FF9800">Da migliorare</strong> &mdash; Alcune informazioni sono corrette, ma c'&egrave; ancora molto da fare.</span></div>
+        <div style="display:flex;align-items:center;gap:10px"><span style="background:#4CAF50;color:white;font-weight:bold;padding:4px 12px;border-radius:6px;font-size:.85rem;white-space:nowrap;flex-shrink:0">70 &ndash; 100</span><span style="color:var(--text2)"><strong style="color:#4CAF50">Ottimo</strong> &mdash; Le AI ti rappresentano bene: mantieni e rafforza questo risultato.</span></div>
+      </div>
+    </div>
+    <div class="card anim-in anim-in-1">
+      <div class="form-group"><label>Nome del Brand</label><input type="text" id="brandName" placeholder="es. Nike, Apple, AvantGrade..."></div>
+      <div class="form-group"><label>Settore di riferimento</label><input type="text" id="sectorName" placeholder="es. Digital Marketing, Moda, Food &amp; Beverage..."></div>
+      <button class="btn btn-primary btn-full" id="btnStep1" disabled>Continua &rarr;</button>
+    </div>
+  </div>
+
+  <div id="step2" class="hidden">
+    <div class="card anim-in">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h2 style="margin:0">Racconta <span id="brandTitle" style="color:var(--orange)"></span></h2>
+        <button class="btn btn-secondary" id="btnBack1" style="padding:8px 16px;font-size:.85rem">&larr; Indietro</button>
+      </div>
+      <div id="questionsContainer"></div>
+      <button class="btn btn-primary btn-full" id="btnAnalyze" disabled>Scopri cosa dicono le AI</button>
+    </div>
+  </div>
+
+  <div id="step3" class="hidden">
+    <div class="score-hero anim-in" id="scoreHero">
+      <div class="label">Punteggio complessivo di Brand AI Integrity</div>
+      <div class="value"><span id="scoreValue">0</span><span class="suffix">/100</span></div>
+      <div class="judgment" id="scoreJudgment"></div>
+    </div>
+    <div class="msg-box anim-in anim-in-1" id="scoreMessage"></div>
+    <div class="ai-scores anim-in anim-in-2">
+      <div class="ai-score-card gemini-card" id="geminiCard">
+        <div class="ai-name">⚫ Gemini</div>
+        <div class="ai-value"><span id="geminiScore">0</span>/100</div>
+      </div>
+      <div class="ai-score-card chatgpt-card" id="chatgptCard">
+        <div class="ai-name">🟢 ChatGPT</div>
+        <div class="ai-value"><span id="chatgptScore">0</span>/100</div>
+      </div>
+    </div>
+    <h3 class="anim-in anim-in-3" style="margin-bottom:8px;color:var(--text2)">Dettagli per Domanda</h3>
+    <p class="anim-in anim-in-3" style="color:var(--text3);font-size:.9rem;line-height:1.65;margin-bottom:20px">Per ogni domanda abbiamo confrontato le risposte di Gemini e ChatGPT con la ground truth che hai fornito.</p>
+    <div id="detailsContainer" class="anim-in anim-in-4"></div>
+    <div class="cta-section" style="margin-top:32px">
+      <h2>Grazie di aver usato Brand AI Integrity</h2>
+      <p>uno strumento dell'agenzia di GEO AI Search <strong>AvantGrade</strong></p>
+      <div style="display:flex;justify-content:center;margin-top:8px">
+        <button class="btn-white" id="btnDownloadPdf" style="background:rgba(255,255,255,.15);color:white;border:2px solid rgba(255,255,255,.4);cursor:pointer;font-size:1.05rem;padding:16px 48px">⬇ Scarica il Report PDF</button>
+      </div>
+      <div id="pdfStatus" style="margin-top:12px;font-size:.9rem;color:rgba(255,255,255,.8)"></div>
+    </div>
+  </div>
+
+  <div class="footer">Ideato da <strong>AvantGrade.com</strong></div>
+</div>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="orb-container">
+    <svg class="orb-ring" viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#E87722"/>
+          <stop offset="100%" stop-color="#FF9800"/>
+        </linearGradient>
+      </defs>
+      <circle class="orb-ring-bg" cx="80" cy="80" r="70"/>
+      <circle class="orb-ring-fill" id="orbRing" cx="80" cy="80" r="70"/>
+    </svg>
+    <div class="orb"><span class="orb-pct" id="orbPct">0<span class="orb-pct-sym">%</span></span></div>
+  </div>
+  <div class="loading-phase" id="loadingPhase">Preparazione analisi...</div>
+  <div class="loading-sub" id="loadingSub">Connessione alle AI in corso</div>
+</div>
+
+<!-- FIX SEC-04: JavaScript in file esterno, nessuno script inline (richiesto dalla CSP) -->
+<script src="/static/app.js" defer></script>
+</body>
+</html>
